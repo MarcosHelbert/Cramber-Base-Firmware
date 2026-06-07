@@ -45,7 +45,7 @@ BumpStop bumpstop;
 FFBManager ffb_manager;
 
 Anticogging anticogging;
-Encoder encoder = Encoder(ENCODER_CPR, ENCODER_REVERSE, ENCODER_UPDATE_HZ, MOTOR_PWM_FREQ_HZ);
+Encoder encoder = Encoder(ENCODER_CPR, ENCODER_REVERSE, MOTOR_PWM_FREQ_HZ);
 Motor motor = Motor(power_monitor, current_sensor, drv8301, encoder);
 FOC foc = FOC(MOTOR_PWM_FREQ_HZ);
 Axis axis = Axis(1000, foc, encoder, bumpstop, motor, anticogging, ffb_manager);
@@ -69,25 +69,8 @@ static void usb_task(void *arg)
         iwdg_reset();
         usb.update();
 
-        vTaskDelayUntil(&lastWakeTime, period);
-    }
-};
-
-static void encoder_task(void *arg)
-{
-    (void)arg;
-
-    TickType_t lastWakeTime = xTaskGetTickCount();
-    const TickType_t period = pdMS_TO_TICKS(1000.0f / ENCODER_UPDATE_HZ);
-
-    while (1)
-    {
-        encoder.update();
-
         if (axis.getState() == Axis::State::READY)
-        {
-            usb.updateAxis(encoder.getPosition());
-        }
+            usb.updateAxis(encoder.position());
 
         vTaskDelayUntil(&lastWakeTime, period);
     }
@@ -271,7 +254,6 @@ int main()
         braking_resistor.arm();
 
         xTaskCreate(usb_task, "usb", 1024, NULL, 7, NULL);
-        xTaskCreate(encoder_task, "encoder", 512, NULL, 6, NULL);
         xTaskCreate(axis_task, "axis", 2048, NULL, 5, NULL);
         xTaskCreate(fault_task, "fault", 384, NULL, 1, NULL);
 
@@ -293,7 +275,7 @@ extern "C" void tim1_cc_isr(void)
     float vbus = power_monitor.getVbus();
 
     current_sensor.update();
-    encoder.updateFOC();
+    encoder.update();
 
     static float previous_ibus = 0.0f;
 
@@ -307,7 +289,7 @@ extern "C" void tim1_cc_isr(void)
     float ic = current_sensor.getIc();
 
     float angle = axis.getElectricalAngle();
-    float velocity = encoder.getVelocityFF();
+    float velocity = encoder.velocity();
     float omega_e = velocity * MOTOR_POLE_PAIRS;
 
     foc.update(
