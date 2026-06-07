@@ -95,7 +95,7 @@ void Axis::update()
 
         if (millis() - align_start_ms_ >= CALIBRATION_LOCK_DURATION_MS)
         {
-            init_enc_val_ = encoder_.getPosition();
+            init_enc_val_ = encoder_.position();
             encvaluesum_ = 0;
             num_steps_ = 0;
             open_loop_distance_ = 0.0f;
@@ -116,12 +116,12 @@ void Axis::update()
 
         foc_.setTargets(CALIBRATION_CURRENT, 0.0f);
 
-        encvaluesum_ += encoder_.getPosition();
+        encvaluesum_ += encoder_.position();
         num_steps_++;
 
         if (open_loop_distance_ >= CALIBRATION_SCAN_DISTANCE)
         {
-            int32_t current_enc = encoder_.getPosition();
+            int32_t current_enc = encoder_.position();
 
             // Determine direction
             if (current_enc > init_enc_val_ + 8)
@@ -165,7 +165,7 @@ void Axis::update()
 
         foc_.setTargets(CALIBRATION_CURRENT, 0.0f);
 
-        encvaluesum_ += encoder_.getPosition();
+        encvaluesum_ += encoder_.position();
         num_steps_++;
 
         if (open_loop_distance_ <= 0.0f)
@@ -198,8 +198,8 @@ void Axis::update()
         const uint32_t samples = COGGING_COMPENSATION_SAMPLING_POINTS;
 
         float target_mech = (static_cast<float>(anticogging_index_) / samples) * TWO_PI;
-        float current_mech = (encoder_.getPosition() - g_state.mechanical_offset) * (TWO_PI / ENCODER_CPR);
-        float velocity = encoder_.getVelocity();
+        float current_mech = (encoder_.position() - g_state.mechanical_offset) * (TWO_PI / ENCODER_CPR);
+        float velocity = encoder_.velocity();
 
         float pos_err = target_mech - current_mech;
         pos_err = normalizeAngle(pos_err);
@@ -240,12 +240,12 @@ void Axis::update()
 
         const float encoder_to_rad = TWO_PI / ENCODER_CPR;
 
-        const int32_t position_counts = encoder_.getPosition();
+        const int32_t position_counts = encoder_.position();
         int32_t centered_counts = position_counts - g_state.mechanical_offset;
 
         float positionRad = static_cast<float>(centered_counts) * encoder_to_rad;
-        float velocity = encoder_.getVelocity();
-        float acceleration = encoder_.getAcceleration();
+        float velocity = encoder_.velocity();
+        float acceleration = encoder_.acceleration();
 
         torque += ffb_manager_.getTorque(positionRad, velocity, acceleration, millis());
         torque += bumpstop_.calculate(centered_counts, velocity);

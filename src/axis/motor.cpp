@@ -263,7 +263,7 @@ bool Motor::measurePhaseInductance()
 
 float Motor::getElectricalAngle() const
 {
-    float count = encoder_.getPosition();
+    float count = encoder_.position();
     float mech_angle = (count / ENCODER_CPR) * TWO_PI;
     float ele_angle = (mech_angle * MOTOR_POLE_PAIRS) - g_state.encoder_offset_rad;
     return normalizeAngle2Pi(ele_angle);
