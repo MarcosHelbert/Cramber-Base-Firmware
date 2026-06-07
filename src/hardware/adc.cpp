@@ -49,6 +49,9 @@ void ADC::init()
     adc_enable_external_trigger_injected(ADC1, ADC_CR2_JEXTSEL_TIM1_CC4, ADC_CR2_JEXTEN_RISING_EDGE);
 
     adc_power_on(ADC1);
+
+    ADC_SR(ADC1) = 0;
+
     adc_start_conversion_regular(ADC1);
 }
 

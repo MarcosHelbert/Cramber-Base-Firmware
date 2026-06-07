@@ -1,5 +1,6 @@
 #include "motor.h"
 
+#include <libopencm3/stm32/iwdg.h>
 #include <libopencm3/stm32/timer.h>
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/gpio.h>
@@ -176,11 +177,14 @@ bool Motor::measurePhaseResistance()
     if (!arm())
         return false;
 
+    // nvic_disable_irq(NVIC_TIM1_CC_IRQ);
+
     float sum_I = 0.0f;
     const int R_cycles = 100;
 
     for (int i = 0; i < R_cycles; i++)
     {
+        iwdg_reset();
         setTestVoltage();
         delay_us(2000);
         current_.waitForSample();
@@ -191,6 +195,7 @@ bool Motor::measurePhaseResistance()
     }
 
     setDuty(0.5f, 0.5f, 0.5f);
+    // nvic_enable_irq(NVIC_TIM1_CC_IRQ);
 
     float avg_I = sum_I / R_cycles;
 
@@ -218,6 +223,7 @@ bool Motor::measurePhaseInductance()
 
     for (int i = 0; i < cycles; i++)
     {
+        iwdg_reset();
         setTestVoltage();
         delay_us(5);
 

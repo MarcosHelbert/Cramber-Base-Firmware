@@ -1,6 +1,8 @@
 #include "current_sensor.h"
 
+#include <libopencm3/stm32/iwdg.h>
 #include <libopencm3/stm32/timer.h>
+#include <libopencm3/stm32/adc.h>
 
 #include <hardware/adc.h>
 #include <config.h>
@@ -20,21 +22,23 @@ void CurrentSensor::updateScale()
 
 void CurrentSensor::waitForSample()
 {
-    timer_clear_flag(TIM1, TIM_SR_UIF);
-    while (!(TIM_SR(TIM1) & TIM_SR_UIF))
+    ADC_SR(ADC1) &= ~(ADC_SR_JEOC | ADC_SR_OVR);
+    while (!(ADC_SR(ADC1) & ADC_SR_JEOC))
         ;
+    ADC_SR(ADC1) &= ~ADC_SR_JEOC;
 }
 
 void CurrentSensor::calibrateOffsets(uint16_t samples)
 {
-    float sum_b = 0.0f;
-    float sum_c = 0.0f;
-
     if (samples == 0)
         return;
 
+    float sum_b = 0.0f;
+    float sum_c = 0.0f;
+
     for (uint16_t i = 0; i < samples; i++)
     {
+        iwdg_reset();
         waitForSample();
         sum_b += ADC::getInjected(ADC::InjectedChannel::IB);
         sum_c += ADC::getInjected(ADC::InjectedChannel::IC);
