@@ -1,5 +1,7 @@
 #include "ffb_engine.h"
 
+#include <algorithm>
+
 int32_t FFBEngine::conditionForce(const EffectCondition &c, float inputNorm)
 {
     if (!c.isActive())
@@ -14,7 +16,7 @@ int32_t FFBEngine::conditionForce(const EffectCondition &c, float inputNorm)
     float force = coeff * pos * 32767.0f;
 
     if (sat > 0.0f)
-        force = clamp(force, -sat * 32767.0f, sat * 32767.0f);
+        force = std::clamp(force, -sat * 32767.0f, sat * 32767.0f);
 
     return (int32_t)force;
 }
@@ -31,7 +33,7 @@ int32_t FFBEngine::damper(const EffectCondition &c, float velocity)
     const float sat = forward ? c.posSatNorm : c.negSatNorm;
 
     float force = -coeff * v * 32767.0f;
-    return (int32_t)clamp(force, -sat * 32767.0f, sat * 32767.0f);
+    return (int32_t)std::clamp(force, -sat * 32767.0f, sat * 32767.0f);
 }
 
 int32_t FFBEngine::spring(const EffectCondition &c, float position)
@@ -46,7 +48,7 @@ int32_t FFBEngine::spring(const EffectCondition &c, float position)
     const float sat = positive ? c.posSatNorm : c.negSatNorm;
 
     float force = -coeff * pos * 32767.0f;
-    return (int32_t)clamp(force, -sat * 32767.0f, sat * 32767.0f);
+    return (int32_t)std::clamp(force, -sat * 32767.0f, sat * 32767.0f);
 }
 
 int32_t FFBEngine::inertia(const EffectCondition &c, float velocity, float acceleration)
@@ -57,9 +59,10 @@ int32_t FFBEngine::inertia(const EffectCondition &c, float velocity, float accel
     float a = acceleration * kInvAccMax;
     float v = velocity * kInvVelMax;
 
-    float force = (-c.posCoeffNorm * a - c.negCoeffNorm * v) * 32767.0f;
+    // float force = (-c.posCoeffNorm * a - c.negCoeffNorm * v) * 32767.0f;
+    float force = -c.posCoeffNorm * a * 32767.0f;
     const float sat = c.posSatNorm * 32767.0f;
-    return (int32_t)clamp(force, -sat, sat);
+    return (int32_t)std::clamp(force, -sat, sat);
 }
 
 int32_t FFBEngine::friction(const EffectCondition &c, float velocity)
@@ -76,7 +79,7 @@ int32_t FFBEngine::friction(const EffectCondition &c, float velocity)
     float stribeck = -c.negCoeffNorm * s;
     float force = (viscous + stribeck) * 32767.0f;
     const float sat = c.posSatNorm * 32767.0f;
-    return (int32_t)clamp(force, -sat, sat);
+    return (int32_t)std::clamp(force, -sat, sat);
 }
 
 int32_t FFBEngine::applyEnvelope(const Effect &e, uint32_t elapsed, int32_t magnitude)
@@ -99,7 +102,7 @@ int32_t FFBEngine::applyEnvelope(const Effect &e, uint32_t elapsed, int32_t magn
         if (elapsed >= fadeStart)
         {
             float t = (float)(elapsed - fadeStart) * e.invFadeTime;
-            t = clamp(t, 0.0f, 1.0f);
+            t = std::clamp(t, 0.0f, 1.0f);
 
             return (int32_t)(mag + (e.fadeLevel - mag) * t);
         }
@@ -118,7 +121,7 @@ int32_t FFBEngine::rampForce(const Effect &e, uint32_t elapsed)
     if (e.invDuration == 0.0f)
         return e.startLevel;
 
-    const float t = clamp((float)elapsed * e.invDuration, 0.0f, 1.0f);
+    const float t = std::clamp((float)elapsed * e.invDuration, 0.0f, 1.0f);
     return (int32_t)((float)e.startLevel + t * (float)(e.endLevel - e.startLevel));
 }
 
@@ -254,6 +257,6 @@ float FFBEngine::computeTorqueNorm(
         torque += result * e.gainNorm * globalGainF;
     };
 
-    torque = clamp(torque, -32767.0f, 32767.0f);
+    torque = std::clamp(torque, -32767.0f, 32767.0f);
     return torque * (1 / 32767.0f);
 }

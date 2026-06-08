@@ -1,6 +1,7 @@
 #include "axis.h"
 
-#include <utils.h>
+#include <algorithm>
+
 #include <config.h>
 #include <system_state.h>
 
@@ -110,7 +111,7 @@ void Axis::update()
         const float dt = 1.0f / frequency_;
         open_loop_distance_ += CALIBRATION_SCAN_OMEGA * dt;
 
-        open_loop_angle_ = fmod_fast(open_loop_distance_, TWO_PI);
+        open_loop_angle_ = fmodf(open_loop_distance_, TWO_PI);
         if (open_loop_angle_ < 0.0f)
             open_loop_angle_ += TWO_PI;
 
@@ -138,7 +139,6 @@ void Axis::update()
                 return;
             }
 
-            // Check CPR vs Pole Pairs mismatch
             float elec_rad_per_enc = (MOTOR_POLE_PAIRS * TWO_PI) / (float)ENCODER_CPR;
             float expected_encoder_delta = CALIBRATION_SCAN_DISTANCE / elec_rad_per_enc;
             float actual_response = abs((float)(current_enc - init_enc_val_));
@@ -159,7 +159,7 @@ void Axis::update()
         const float dt = 1.0f / frequency_;
         open_loop_distance_ -= CALIBRATION_SCAN_OMEGA * dt;
 
-        open_loop_angle_ = fmod_fast(open_loop_distance_, TWO_PI);
+        open_loop_angle_ = fmodf(open_loop_distance_, TWO_PI);
         if (open_loop_angle_ < 0.0f)
             open_loop_angle_ += TWO_PI;
 
@@ -173,7 +173,7 @@ void Axis::update()
             float average_enc_count = (float)encvaluesum_ / (float)num_steps_;
             float offset = (average_enc_count / (float)ENCODER_CPR) * TWO_PI * MOTOR_POLE_PAIRS;
 
-            g_state.encoder_offset_rad = fmod_fast(offset, TWO_PI);
+            g_state.encoder_offset_rad = fmodf(offset, TWO_PI);
             if (g_state.encoder_offset_rad < 0.0f)
                 g_state.encoder_offset_rad += TWO_PI;
 
@@ -198,21 +198,20 @@ void Axis::update()
         const uint32_t samples = COGGING_COMPENSATION_SAMPLING_POINTS;
 
         float target_mech = (static_cast<float>(anticogging_index_) / samples) * TWO_PI;
-        float current_mech = (encoder_.position() - g_state.mechanical_offset) * (TWO_PI / ENCODER_CPR);
         float velocity = encoder_.velocity();
 
-        float pos_err = target_mech - current_mech;
+        float pos_err = target_mech - encoder_.mechanicalAngle();
         pos_err = normalizeAngle(pos_err);
 
         float torque_p = COGGING_COMPENSATION_KP * pos_err;
 
         vel_integrator_ += COGGING_COMPENSATION_KI * pos_err * (1.0f / frequency_);
-        vel_integrator_ = clamp(vel_integrator_, -MAX_CURRENT, MAX_CURRENT);
+        vel_integrator_ = std::clamp(vel_integrator_, -MAX_CURRENT, MAX_CURRENT);
 
         float torque_d = -COGGING_COMPENSATION_KD * velocity;
 
         float torque = torque_p + torque_d + vel_integrator_;
-        torque = clamp(torque, -MAX_CURRENT, MAX_CURRENT);
+        torque = std::clamp(torque, -MAX_CURRENT, MAX_CURRENT);
         foc_.setTargets(0.0f, torque);
 
         if (abs(pos_err) <= COGGING_COMPENSATION_POS_EPS && abs(velocity) <= COGGING_COMPENSATION_VEL_EPS)
@@ -238,29 +237,24 @@ void Axis::update()
     {
         float torque = 0.0f;
 
-        const float encoder_to_rad = TWO_PI / ENCODER_CPR;
-
-        const int32_t position_counts = encoder_.position();
-        int32_t centered_counts = position_counts - g_state.mechanical_offset;
-
-        float positionRad = static_cast<float>(centered_counts) * encoder_to_rad;
+        float positionRad = encoder_.mechanicalAngle();
         float velocity = encoder_.velocity();
         float acceleration = encoder_.acceleration();
 
         torque += ffb_manager_.getTorque(positionRad, velocity, acceleration, millis());
-        torque += bumpstop_.calculate(centered_counts, velocity);
+        torque += bumpstop_.calculate(positionRad, velocity);
 
         if (COGGING_COMPENSATION_ENABLED)
         {
             float anticog = anticogging_.getCompensation(positionRad);
-            anticog = clamp(anticog, -0.5f, 0.5f);
+            anticog = std::clamp(anticog, -0.5f, 0.5f);
             torque += anticog;
         }
 
-        torque = clamp(torque, -MAX_CURRENT, MAX_CURRENT);
+        torque = std::clamp(torque, -MAX_CURRENT, MAX_CURRENT);
 
         float delta = torque - iq_prev_;
-        delta = clamp(delta, -max_step_, max_step_);
+        delta = std::clamp(delta, -max_step_, max_step_);
 
         iq_prev_ += delta;
 

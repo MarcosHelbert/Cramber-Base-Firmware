@@ -10,11 +10,9 @@ public:
 
     void updateLimits();
 
-    float calculate(int32_t position_counts, float velocity_rad_s);
+    float calculate(float position_rad, float velocity_rad_s);
 
 private:
-    float counts_to_rad_ = 0.0f;
-
     float half_range_rad_ = 0.0f;
     float transition_rad_ = 0.0f;
     float inv_transition_rad_ = 0.0f;

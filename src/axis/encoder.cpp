@@ -1,7 +1,8 @@
 #include "encoder.h"
-
 #include <utils.h>
-#include <math.h>
+
+#include <cmath>
+#include <system_state.h>
 
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/timer.h>
@@ -100,7 +101,7 @@ void Encoder::update()
     }
 
     absolute_position_ += diff;
-    mechanical_angle_ = static_cast<float>(absolute_position_) * two_pi_over_cpr_;
+    mechanical_angle_ = static_cast<float>(absolute_position_ - g_state.mechanical_offset) * two_pi_over_cpr_;
     last_count_ = current;
 
     // ========= KALMAN =========

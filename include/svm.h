@@ -1,6 +1,8 @@
 #ifndef SVM_H
 #define SVM_H
 
+#include <algorithm>
+
 #include "utils.h"
 
 inline void clarke(float ia, float ib, float ic, float &alpha, float &beta)
@@ -36,8 +38,8 @@ inline void svm(float va, float vb, float vc, float vbus, float &duty_a, float &
     if (vbus < 1.0f)
         vbus = 1.0f;
 
-    float max_v = max(max(va, vb), vc);
-    float min_v = min(min(va, vb), vc);
+    float max_v = std::max(std::max(va, vb), vc);
+    float min_v = std::min(std::min(va, vb), vc);
     float offset = (max_v + min_v) * 0.5f;
 
     va -= offset;

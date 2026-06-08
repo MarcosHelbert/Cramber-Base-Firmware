@@ -4,7 +4,7 @@
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/stm32/timer.h>
 
-#include <utils.h>
+#include <algorithm>
 #include <debug.h>
 
 BrakingResistor::BrakingResistor(float resistance_ohm, float power_rating_w, float max_regen_current, uint32_t pwm_hz)
@@ -83,13 +83,13 @@ void BrakingResistor::update(float vbus, float ibus)
         brake_duty = max_duty;
     }
 
-    float duty_ = clamp(brake_duty, 0.0f, 0.95f);
+    float duty_ = std::clamp(brake_duty, 0.0f, 0.95f);
     setDuty_(duty_);
 }
 
 void BrakingResistor::setDuty_(float duty)
 {
-    duty = clamp(duty, 0.0f, 0.95f);
+    duty = std::clamp(duty, 0.0f, 0.95f);
 
     uint32_t period = arr_ + 1;
     uint32_t high_on = (uint32_t)(period * duty);

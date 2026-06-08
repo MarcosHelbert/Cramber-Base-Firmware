@@ -1,5 +1,7 @@
 #include "foc.h"
 
+#include <algorithm>
+
 #include <svm.h>
 #include <config.h>
 
@@ -41,8 +43,8 @@ void FOC::setGains(float kp_gain, float ki_gain)
 
 void FOC::setTargets(float id, float iq)
 {
-    id_target_ = clamp(id, -MAX_CURRENT, MAX_CURRENT);
-    iq_target_ = clamp(iq, -MAX_CURRENT, MAX_CURRENT);
+    id_target_ = std::clamp(id, -MAX_CURRENT, MAX_CURRENT);
+    iq_target_ = std::clamp(iq, -MAX_CURRENT, MAX_CURRENT);
 }
 
 void FOC::current_control(float vmax, float d, float q, float &vd, float &vq, float omega_e, float L, float flux)
@@ -76,8 +78,8 @@ void FOC::current_control(float vmax, float d, float q, float &vd, float &vq, fl
     float kaw = 1.0f;
     d_integral_ += (ki_ * err_d + kaw * (vd_sat - vd)) * dt_;
     q_integral_ += (ki_ * err_q + kaw * (vq_sat - vq)) * dt_;
-    d_integral_ = clamp(d_integral_, -vmax, vmax);
-    q_integral_ = clamp(q_integral_, -vmax, vmax);
+    d_integral_ = std::clamp(d_integral_, -vmax, vmax);
+    q_integral_ = std::clamp(q_integral_, -vmax, vmax);
 
     vd_ = vd_sat;
     vq_ = vq_sat;

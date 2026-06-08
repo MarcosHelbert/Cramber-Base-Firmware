@@ -184,7 +184,6 @@ public:
      */
     static inline float fast_tanh(float x)
     {
-        // Clamping para evitar saturação numérica e lixo em FFB
         if (x > 5.0f)
             return 1.0f;
         if (x < -5.0f)
@@ -234,7 +233,6 @@ public:
      */
     static inline float fast_exp(float x)
     {
-        // Clamp evita explosão numérica (importante em FFB)
         if (x < -10.0f)
             return 0.0f;
         if (x > 10.0f)

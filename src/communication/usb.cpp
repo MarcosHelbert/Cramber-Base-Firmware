@@ -1,5 +1,7 @@
 #include "usb.h"
 
+#include <algorithm>
+
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/cm3/nvic.h>
@@ -10,7 +12,6 @@
 #include <system_state.h>
 #include <hardware/timer.h>
 #include <config.h>
-#include <utils.h>
 #include <debug.h>
 
 USB::USB()
@@ -73,7 +74,7 @@ int16_t USB::scale_position_to_axis_(int32_t positionCounts) const
         return 0;
 
     int32_t relative_pos = positionCounts - g_state.mechanical_offset;
-    relative_pos = clamp(relative_pos, -max_counts, max_counts);
+    relative_pos = std::clamp(relative_pos, -max_counts, max_counts);
     int32_t scaled = (int32_t)((int64_t)relative_pos * 32767 / max_counts);
 
     return static_cast<int16_t>(scaled);

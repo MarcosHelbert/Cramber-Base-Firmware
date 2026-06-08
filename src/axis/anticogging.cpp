@@ -1,5 +1,6 @@
 #include "anticogging.h"
 
+#include <cmath>
 #include <utils.h>
 
 Anticogging::Anticogging()
@@ -21,7 +22,7 @@ float Anticogging::getCompensation(float mechanicalPositionRad) const
     float a = normalizeAngle2Pi(mechanicalPositionRad);
 
     float pos = (a / TWO_PI) * static_cast<float>(size_);
-    float ipos = fastFloor(pos);
+    float ipos = floorf(pos);
     uint32_t i0 = static_cast<uint32_t>(ipos) % size_;
     uint32_t i1 = (i0 + 1) % size_;
     float frac = pos - ipos;

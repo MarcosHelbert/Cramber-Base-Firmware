@@ -1,9 +1,9 @@
 #include "ffb_manager.h"
 
+#include <algorithm>
 #include <cstring>
 #include <libopencm3/cm3/cortex.h>
 #include <config.h>
-#include <utils.h>
 
 #include <debug.h>
 
@@ -208,7 +208,7 @@ float FFBManager::getTorque(float positionRad, float velocityRadS, float acceler
         positionRad, velocityRadS, accelerationRadS2,
         nowMs);
     float iq = torque * MAX_CURRENT;
-    return clamp(iq, -MAX_CURRENT, MAX_CURRENT);
+    return std::clamp(iq, -MAX_CURRENT, MAX_CURRENT);
 }
 
 void FFBManager::sendStatusReport_()
@@ -345,10 +345,10 @@ void FFBManager::setPeriodic_(SetPeriodic_Data *d)
     if (!e.allocated)
         return;
 
-    e.magnitude = clamp<int16_t>(d->magnitude, -32767, 32767);
-    e.offset = clamp<int16_t>(d->offset, -32767, 32767);
+    e.magnitude = std::clamp<int16_t>(d->magnitude, -32767, 32767);
+    e.offset = std::clamp<int16_t>(d->offset, -32767, 32767);
     e.phase = d->phase;
-    e.period = clamp<uint32_t>(d->period, 1u, 0xFFFFu);
+    e.period = std::clamp<uint32_t>(d->period, 1u, 0xFFFFu);
 
     recompute_(e);
 }
@@ -363,7 +363,7 @@ void FFBManager::setConstantForce_(SetConstantForce_Data *d)
     if (!e.allocated)
         return;
 
-    e.magnitude = clamp<int16_t>(d->magnitude, -32767, 32767);
+    e.magnitude = std::clamp<int16_t>(d->magnitude, -32767, 32767);
 
     recompute_(e);
 
@@ -379,8 +379,8 @@ void FFBManager::setRamp_(SetRamp_Data *d)
     if (!e.allocated)
         return;
 
-    e.startLevel = clamp<int16_t>(d->startLevel, -32767, 32767);
-    e.endLevel = clamp<int16_t>(d->endLevel, -32767, 32767);
+    e.startLevel = std::clamp<int16_t>(d->startLevel, -32767, 32767);
+    e.endLevel = std::clamp<int16_t>(d->endLevel, -32767, 32767);
 
     recompute_(e);
 }
@@ -523,7 +523,7 @@ void FFBManager::createNewEffect_(NewEffect_Data *d)
 
     recompute_(e);
 
-    usedEffects_ = min<uint32_t>(
+    usedEffects_ = std::min<uint32_t>(
         usedEffects_ + 1,
         effects_.size());
 

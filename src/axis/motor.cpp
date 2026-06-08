@@ -1,5 +1,7 @@
 #include "motor.h"
 
+#include <algorithm>
+
 #include <libopencm3/stm32/iwdg.h>
 #include <libopencm3/stm32/timer.h>
 #include <libopencm3/stm32/rcc.h>
@@ -277,9 +279,9 @@ float Motor::getElectricalAngle() const
 
 void Motor::setDuty(float a, float b, float c)
 {
-    a = clamp(a, 0.05f, 0.95f);
-    b = clamp(b, 0.05f, 0.95f);
-    c = clamp(c, 0.05f, 0.95f);
+    a = std::clamp(a, 0.05f, 0.95f);
+    b = std::clamp(b, 0.05f, 0.95f);
+    c = std::clamp(c, 0.05f, 0.95f);
 
     timer_set_oc_value(TIM1, TIM_OC1, (uint32_t)(a * period_));
     timer_set_oc_value(TIM1, TIM_OC2, (uint32_t)(b * period_));
@@ -295,7 +297,7 @@ void Motor::setTestVoltage()
 
     float duty = CALIBRATION_MAX_VOLTAGE / vbus;
 
-    duty = clamp(duty, -0.3f, 0.3f);
+    duty = std::clamp(duty, -0.3f, 0.3f);
 
     float da = 0.5f;
     float db = 0.5f + duty;
