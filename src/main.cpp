@@ -306,5 +306,5 @@ extern "C" void tim1_cc_isr(void)
 
     previous_ibus = (foc.getModD(vbus) * foc.getId()) + (foc.getModQ(vbus) * foc.getIq());
 
-    const uint32_t isr_cycles = dwt_get_cycles() - start_cycles;
+    // const uint32_t isr_cycles = dwt_get_cycles() - start_cycles;
 }

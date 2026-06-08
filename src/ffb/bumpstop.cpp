@@ -58,7 +58,7 @@ float BumpStop::calculate(int32_t position_counts, float velocity_rad_s)
         float damping_gain = 0.2f + 0.8f * x;
         float damping = damping_ * damping_gain * velocity_rad_s;
 
-        torque = +spring - damping;
+        torque = spring + damping;
     }
 
     if (abs(velocity_rad_s) < 0.3f && torque != 0.0f)

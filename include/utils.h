@@ -90,16 +90,19 @@ constexpr T lerp(T a, T b, T t)
 template <typename T>
 constexpr T map(T val, T in_min, T in_max, T out_min, T out_max)
 {
+    if (in_max == in_min)
+        return out_min;
+
     return out_min + (val - in_min) * (out_max - out_min) / (in_max - in_min);
 }
 
 /**
- * @brief Fast modulo operation for positive floats.
- * Optimized using integer truncation.
+ * @brief Fast modulo operation.
+ * Similar to std::fmod().
  */
 inline float fmod_fast(float x, float y)
 {
-    return x - y * static_cast<int>(x / y);
+    return x - y * trunc(x / y);
 }
 
 /**
@@ -111,11 +114,8 @@ inline float fmod_fast(float x, float y)
  */
 inline float normalizeAngle(float angle)
 {
-    while (angle > PI)
-        angle -= TWO_PI;
-    while (angle < -PI)
-        angle += TWO_PI;
-    return angle;
+    angle = fmod_fast(angle + PI, TWO_PI);
+    return (angle >= 0.0f ? angle : angle + TWO_PI) - PI;
 }
 
 /**
@@ -126,7 +126,7 @@ inline float normalizeAngle(float angle)
  */
 inline float normalizeAngle2Pi(float angle)
 {
-    angle = angle - TWO_PI * static_cast<int>(angle / TWO_PI);
+    angle = fmod_fast(angle, TWO_PI);
     if (angle < 0.0f)
         angle += TWO_PI;
     return angle;
@@ -198,24 +198,6 @@ constexpr T smootherstep(T t)
 }
 
 /**
- * @brief Wrap a value to a range [0, max).
- * Useful for array indices and periodic values.
- *
- * @param val Value to wrap
- * @param max Upper bound (exclusive)
- * @return Wrapped value in [0, max)
- */
-template <typename T>
-constexpr T wrap(T val, T max)
-{
-    while (val >= max)
-        val -= max;
-    while (val < T(0))
-        val += max;
-    return val;
-}
-
-/**
  * @brief Fast floor operation using type casting.
  * Works for positive and negative numbers.
  *
@@ -263,10 +245,10 @@ inline float angleToRadians(float angle_deg)
 }
 
 /**
- * @brief Converts a float in [-1.0, 1.0] range to int16_t in [-32768, 32767] range.
+ * @brief Converts a float in [-1.0, 1.0] range to int16_t in [-32767, 32767] range.
  *
  * @param x Input value in [-1.0, 1.0]
- * @return int16_t Output value in [-32768, 32767]
+ * @return int16_t Output value in [-32767, 32767]
  */
 inline int16_t float_to_i16(float x)
 {
@@ -309,24 +291,9 @@ constexpr T smoothDeadband(T x, T dead)
     if (ax < dead && dead > T(0))
     {
         T t = ax / dead;
-        return copysign(x, t * t);
+        return copysign(t * t, x);
     }
     return x;
-}
-
-/**
- * @brief Fast approximation of sine using a 5th order Taylor expansion around 0.
- * Accurate for small angles (|x| < ~0.5 radians).
- *
- * @param x Angle in radians
- * @return Approximate sine of x
- */
-template <typename T>
-constexpr T frac_norm(T x)
-{
-    x = x * (1.0f / TWO_PI);
-    x = x - fastFloor(x);
-    return x * TWO_PI;
 }
 
 #endif // UTILS_H
