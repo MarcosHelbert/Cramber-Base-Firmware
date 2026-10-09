@@ -3,15 +3,17 @@
 
 #include <cstdint>
 
+#include <persistence/config_store.h>
+
 class CurrentSensor
 {
 public:
-    CurrentSensor() = default;
+    explicit CurrentSensor(const PersistedConfig &config) : config_(config) {}
 
     void init();
     void calibrateOffsets(uint16_t samples = 5000);
 
-    void waitForSample();
+    bool waitForSample();
     void update();
     void reset();
 
@@ -20,16 +22,20 @@ public:
     float getIc() const { return i_c_; }
 
 private:
+    void updateScale();
+    float adcToCurrent(uint16_t raw, float offset) const;
+
+private:
+    const PersistedConfig &config_;
+
     float i_a_ = 0.0f;
     float i_b_ = 0.0f;
     float i_c_ = 0.0f;
 
     float offset_ib_ = 2048.0f;
     float offset_ic_ = 2048.0f;
-    float current_scale_ = 0.0f;
 
-    void updateScale();
-    float adcToCurrent(uint16_t raw, float offset) const;
+    float current_scale_ = 0.0f;
 
     static constexpr float FILTER_ALPHA = 1.0f;
 };

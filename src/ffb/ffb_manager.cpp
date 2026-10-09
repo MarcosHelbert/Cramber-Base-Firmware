@@ -3,11 +3,10 @@
 #include <algorithm>
 #include <cstring>
 #include <libopencm3/cm3/cortex.h>
-#include <config.h>
 
 #include <debug.h>
 
-#include <hardware/timer.h>
+#include <system/timer.h>
 
 template <typename T>
 bool decodeReport(const uint8_t *buffer, uint16_t size, T *out)
@@ -44,7 +43,8 @@ void FFBManager::recompute_(Effect &e)
     c.deadBandNorm = static_cast<float>(c.deadBand) * inv32767;
 }
 
-FFBManager::FFBManager()
+FFBManager::FFBManager(const PersistedConfig &config)
+    : config_(config), engine_(config_)
 {
     blockLoad_.effectBlockIndex = 1;
     blockLoad_.ramPoolAvailable = effects_.size();
@@ -207,8 +207,8 @@ float FFBManager::getTorque(float positionRad, float velocityRadS, float acceler
         effects_, activeMask_, gain_,
         positionRad, velocityRadS, accelerationRadS2,
         nowMs);
-    float iq = torque * MAX_CURRENT;
-    return std::clamp(iq, -MAX_CURRENT, MAX_CURRENT);
+    float iq = torque * config_.max_current;
+    return std::clamp(iq, -config_.max_current, config_.max_current);
 }
 
 void FFBManager::sendStatusReport_()

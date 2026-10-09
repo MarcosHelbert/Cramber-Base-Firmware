@@ -2,8 +2,6 @@
 
 #include <hardware/adc.h>
 
-#include <config.h>
-
 void PowerMonitor::init()
 {
     const int N = 8;
@@ -13,7 +11,7 @@ void PowerMonitor::init()
         sum += ADC::get(ADC::Channel::VBUS);
     }
     uint16_t avg = static_cast<uint16_t>(sum / N);
-    float vbus = adcToVoltage(avg) * VBUS_DIVIDER_RATIO;
+    float vbus = adcToVoltage(avg) * config_.vbus_divider_ratio;
     vbus_filtered_ = vbus;
 }
 
@@ -21,15 +19,15 @@ void PowerMonitor::update()
 {
     uint16_t raw = ADC::get(ADC::Channel::VBUS);
 
-    float vbus = adcToVoltage(raw) * VBUS_DIVIDER_RATIO;
+    float vbus = adcToVoltage(raw) * config_.vbus_divider_ratio;
 
     vbus_filtered_ += VBUS_FILTER_ALPHA * (vbus - vbus_filtered_);
 }
 
 bool PowerMonitor::isPowerOk() const
 {
-    bool a = vbus_filtered_ > VBUS_MIN_VOLTAGE;
-    bool b = vbus_filtered_ < VBUS_MAX_VOLTAGE;
+    bool a = vbus_filtered_ > config_.vbus_min_voltage;
+    bool b = vbus_filtered_ < config_.vbus_max_voltage;
     return a && b;
 }
 

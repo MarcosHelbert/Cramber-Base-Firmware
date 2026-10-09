@@ -2,66 +2,49 @@
 
 #include <libopencm3/stm32/rcc.h>
 
-#include <hardware/timer.h>
-#include <config.h>
 #include <debug.h>
+
+#include <system/timer.h>
 
 volatile uint16_t dbg_s1 = 0;
 volatile uint16_t dbg_s2 = 0;
-
-DRV8301::DRV8301()
-{
-}
 
 void DRV8301::init()
 {
     rcc_periph_clock_enable(RCC_SPI3);
     rcc_periph_clock_enable(RCC_GPIOB);
+    rcc_periph_clock_enable(RCC_GPIOD);
 
     gpio_mode_setup(GPIOC, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO10 | GPIO11 | GPIO12);
     gpio_set_af(GPIOC, GPIO_AF6, GPIO10 | GPIO11 | GPIO12);
 
-    // EN is on PB12
     gpio_mode_setup(GPIOB, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO12);
-    gpio_clear(GPIOB, GPIO12); // Start disabled
+    gpio_clear(GPIOB, GPIO12);
 
-    // NCS is on PC13
     gpio_mode_setup(GPIOC, GPIO_MODE_OUTPUT, GPIO_PUPD_NONE, GPIO13);
-    gpio_set(GPIOC, GPIO13); // Deselected
+    gpio_set(GPIOC, GPIO13);
 
     gpio_mode_setup(GPIOD, GPIO_MODE_INPUT, GPIO_PUPD_PULLUP, GPIO2);
 
-    // SPI Peripheral Configuration
     spi_disable(spi_);
     spi_init_master(spi_, SPI_CR1_BAUDRATE_FPCLK_DIV_16, SPI_CR1_CPOL_CLK_TO_0_WHEN_IDLE, SPI_CR1_CPHA_CLK_TRANSITION_2, SPI_CR1_DFF_16BIT, SPI_CR1_MSBFIRST);
     spi_enable_software_slave_management(spi_);
     spi_set_nss_high(spi_);
     spi_enable(spi_);
 
-    gpio_clear(GPIOB, GPIO12);
-    delay_us(50);
-    gpio_set(GPIOB, GPIO12);
-    delay_ms(2);
-    gpio_clear(GPIOB, GPIO12);
+    gpio_clear(en_port_, en_pin_);
 }
 
-void DRV8301::enable()
+bool DRV8301::enable()
 {
     gpio_clear(en_port_, en_pin_);
-    delay_ms(1);
+    delay_us(100);
 
     gpio_set(en_port_, en_pin_);
     delay_ms(20);
 
-    // uint32_t start = millis();
-
-    // while (millis() - start < 100)
-    // {
-    //     uint16_t s1 = readRegister(STATUS_1);
-
-    //     if (s1 != 0xFFFF && !(s1 & (1 << 10)))
-    //         break;
-    // }
+    writeRegister(CONTROL_1, (1 << 2));
+    delay_us(100);
 
     uint16_t gate_current = 0; // 1.7A
     uint16_t gate_reset = 0;
@@ -79,17 +62,30 @@ void DRV8301::enable()
     uint16_t dc_cal_ch1 = 0;
     uint16_t oc_toff = 0;
 
-    if (CURRENT_AMP_GAIN == 10.0f)
+    if (config_.current_amp_gain == 10.0f)
         gain = 0;
-    else if (CURRENT_AMP_GAIN == 20.0f)
+    else if (config_.current_amp_gain == 20.0f)
         gain = 1;
-    else if (CURRENT_AMP_GAIN == 40.0f)
+    else if (config_.current_amp_gain == 40.0f)
         gain = 2;
     else
         gain = 3;
 
     uint16_t c2 = (oc_toff << 6) | (dc_cal_ch1 << 4) | (gain << 2) | (octw_mode << 0);
     writeRegister(CONTROL_2, c2);
+
+    delay_ms(20);
+
+    uint16_t readback_c1 = readRegister(CONTROL_1);
+    uint16_t readback_c2 = readRegister(CONTROL_2);
+
+    if (readback_c1 == 0xFFFF || readback_c2 == 0xFFFF)
+        return false;
+
+    if (hasFault())
+        return false;
+
+    return true;
 }
 
 void DRV8301::disable()
@@ -106,9 +102,22 @@ Error DRV8301::updateFault()
 {
     if (gpio_get(en_port_, en_pin_) == 0)
     {
-        error_counter_ = 0;
+        fault_low_count_ = 0;
         return Error::ERROR_NONE;
     }
+
+    if (!hasFault())
+    {
+        if (fault_low_count_ > 0)
+            fault_flicker_count_++;
+
+        fault_low_count_ = 0;
+        return Error::ERROR_NONE;
+    }
+
+    fault_low_count_++;
+    if (fault_low_count_ < kFaultDebounceCount)
+        return Error::ERROR_NONE;
 
     uint16_t s1 = readRegister(STATUS_1);
     uint16_t s2 = readRegister(STATUS_2);
@@ -116,24 +125,10 @@ Error DRV8301::updateFault()
     dbg_s1 = s1;
     dbg_s2 = s2;
 
-    if (!hasFault())
-    {
-        error_counter_ = 0;
-        return Error::ERROR_NONE;
-    }
-
     if (s1 == 0xFFFF)
     {
-        error_counter_ = 0;
-        return Error::ERROR_NONE;
+        return Error::ERROR_DRV_FAULT;
     }
-
-    if (error_counter_ < 255)
-        error_counter_++;
-
-    error_counter_++;
-    if (error_counter_ < 4)
-        return Error::ERROR_NONE;
 
     cdcLog(
         "[DRV] fault pin active s1=0x%03X s2=0x%03X | s1{b0=%u b1=%u b2=%u b3=%u b4=%u b5=%u b6=%u b7=%u b8=%u b9=%u b10=%u}\r\n",
@@ -179,14 +174,25 @@ uint16_t DRV8301::getStatus2()
     return readRegister(STATUS_2);
 }
 
+uint16_t DRV8301::getControl1()
+{
+    return readRegister(CONTROL_1);
+}
+
+uint16_t DRV8301::getControl2()
+{
+    return readRegister(CONTROL_2);
+}
+
 uint16_t DRV8301::readRegister(Register reg)
 {
     uint16_t cmd = (1 << 15) | ((reg & 0x0F) << 11);
 
     spiTransfer(cmd);
-    uint16_t val = spiTransfer(0xFFFF) & 0x7FF;
+    delay_us(1);
+    uint16_t val = spiTransfer(cmd) & 0x7FF;
 
-    if (val == 0x0000 || val == 0x7FF)
+    if (val == 0x7FF)
         return 0xFFFF;
 
     return val;

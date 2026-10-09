@@ -3,21 +3,25 @@
 
 enum class Error
 {
-    // === No Error ===
     ERROR_NONE = 0,
 
-    // === Software Errors (1-15) ===
-    ERROR_VBUS_OUT_OF_RANGE = 1,
+    ERROR_VBUS_UNDERVOLTAGE,
+    ERROR_VBUS_OVERVOLTAGE,
 
-    // === Encoder Errors (2-7) ===
-    ERROR_ENCODER_FAILED = 2,         // General encoder failure (e.g. no signal)
-    ERROR_CPR_POLEPAIRS_MISMATCH = 3, // Detected mismatch between encoder CPR and motor pole pairs
+    ERROR_DRV_FAULT,
+    ERROR_DRV_OTS,
+    ERROR_DRV_OC,
+    ERROR_DRV_GATE_FAULT,
 
-    // === Hardware Faults - DRV8301 (16-19) ===
-    ERROR_DRV_FAULT = 16,      // General nFAULT pin active
-    ERROR_DRV_OTS = 17,        // Over-temperature shutdown
-    ERROR_DRV_OC = 18,         // Overcurrent
-    ERROR_DRV_GATE_FAULT = 19, // Gate drive fault
+    ERROR_MOTOR_CALIBRATION_FAILED,
+    ERROR_PHASE_RESISTANCE_OUT_OF_RANGE,
+    ERROR_PHASE_INDUCTANCE_OUT_OF_RANGE,
+
+    ERROR_ENCODER_NOT_FOUND,
+    ERROR_ENCODER_CALIBRATION_FAILED,
+
+    ERROR_NOT_CALIBRATED,
+    ERROR_CURRENT_LIMIT_EXCEEDED,
 };
 
 #endif // ERROR_H

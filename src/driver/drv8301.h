@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <error.h>
+#include <persistence/config_store.h>
 
 class DRV8301
 {
@@ -18,31 +19,24 @@ public:
         CONTROL_2 = 0x03
     };
 
-    struct Status1
-    {
-        bool fault : 1;
-        bool gvref_uv : 1;
-        bool pvd_uv : 1;
-        bool ots : 1;
-        bool oc : 1;
-        bool gate_drv_fault : 1;
-        bool low_vbus : 1;
-        bool ot_warning : 1;
-        uint8_t device_id : 3;
-    };
-
-    DRV8301();
+    explicit DRV8301(const PersistedConfig &config) : config_(config) {}
 
     void init();
-    void enable();
+
+    bool enable();
     void disable();
 
-    inline bool hasFault() const;
+    bool hasFault() const;
 
     Error updateFault();
 
     uint16_t getStatus1();
     uint16_t getStatus2();
+
+    uint16_t getControl1();
+    uint16_t getControl2();
+
+    uint32_t getFaultFlickerCount() const { return fault_flicker_count_; }
 
 private:
     uint16_t readRegister(Register reg);
@@ -54,9 +48,13 @@ private:
     void deselect();
 
 private:
+    const PersistedConfig &config_;
+
     uint32_t spi_ = SPI3;
 
-    uint8_t error_counter_ = 0;
+    uint32_t fault_low_count_ = 0;
+    uint32_t fault_flicker_count_ = 0;
+    static constexpr uint32_t kFaultDebounceCount = 100;
 
     static constexpr uint32_t ncs_port_ = GPIOC;
     static constexpr uint16_t ncs_pin_ = GPIO13;

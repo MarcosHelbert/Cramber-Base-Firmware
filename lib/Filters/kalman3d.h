@@ -7,6 +7,18 @@
 class KalmanFilter3D
 {
 public:
+    /**
+     * @brief Constructs a 3-state (position, velocity, acceleration)
+     * Kalman filter with a constant-acceleration motion model.
+     *
+     * @param dt Fixed time step between predict() calls, in seconds.
+     * @param processNoise0 Process noise covariance for the position state.
+     * @param processNoise1 Process noise covariance for the velocity state.
+     * @param processNoise2 Process noise covariance for the acceleration
+     * state.
+     * @param measurementNoise Measurement noise covariance (R) for the
+     * position measurement.
+     */
     KalmanFilter3D(float dt, float processNoise0, float processNoise1, float processNoise2, float measurementNoise)
         : dt_(dt),
           q0_(processNoise0),
@@ -16,6 +28,11 @@ public:
     {
     }
 
+    /**
+     * @brief Advances the state estimate and error covariance by one time
+     * step using the constant-acceleration motion model, without
+     * incorporating a new measurement.
+     */
     void predict()
     {
         x0_ += x1_ * dt_ + 0.5f * x2_ * dt_ * dt_;
@@ -40,6 +57,12 @@ public:
         p22_ += q2_;
     }
 
+    /**
+     * @brief Corrects the predicted state with a new position measurement.
+     * Must be called after predict() to complete one filter cycle.
+     *
+     * @param measurement Latest raw measurement of the position state.
+     */
     void update(float measurement)
     {
         const float y = measurement - x0_;
@@ -71,6 +94,13 @@ public:
         p22_ -= k2 * p02;
     }
 
+    /**
+     * @brief Resets the state estimate and error covariance.
+     *
+     * @param state0 Position value to reset to.
+     * @param state1 Velocity value to reset to.
+     * @param state2 Acceleration value to reset to.
+     */
     void reset(float state0 = 0.0f, float state1 = 0.0f, float state2 = 0.0f)
     {
         x0_ = state0;
@@ -86,8 +116,19 @@ public:
         p20_ = p21_ = 0.0f;
     }
 
+    /**
+     * @brief Returns the current position estimate.
+     */
     float state0() const { return x0_; }
+
+    /**
+     * @brief Returns the current velocity estimate.
+     */
     float state1() const { return x1_; }
+
+    /**
+     * @brief Returns the current acceleration estimate.
+     */
     float state2() const { return x2_; }
 
 private:

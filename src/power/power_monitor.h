@@ -1,13 +1,14 @@
-
 #ifndef POWER_MONITOR_H
 #define POWER_MONITOR_H
 
 #include <cstdint>
 
+#include <persistence/config_store.h>
+
 class PowerMonitor
 {
 public:
-    PowerMonitor() = default;
+    explicit PowerMonitor(const PersistedConfig &config) : config_(config) {}
 
     void init();
     void update();
@@ -16,9 +17,12 @@ public:
     bool isPowerOk() const;
 
 private:
-    float vbus_filtered_ = 0.0f;
-
     float adcToVoltage(uint16_t raw) const;
+
+private:
+    const PersistedConfig &config_;
+
+    float vbus_filtered_ = 0.0f;
 
     static constexpr float ADC_VREF = 3.3f;
     static constexpr float ADC_MAX = 4095.0f;

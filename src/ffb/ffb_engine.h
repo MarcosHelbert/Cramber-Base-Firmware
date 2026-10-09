@@ -8,10 +8,12 @@
 
 #include <utils.h>
 
+#include <persistence/config_store.h>
+
 class FFBEngine
 {
 public:
-    FFBEngine() = default;
+    FFBEngine(const PersistedConfig &config) : config_(config) {};
 
     float computeTorqueNorm(
         const std::array<Effect, MAX_EFFECTS> &effects,
@@ -34,10 +36,14 @@ private:
     int32_t rampForce(const Effect &e, uint32_t elapsed);
     int32_t periodicForce(const Effect &e, uint32_t elapsed);
 
-    static constexpr float kInvVelMax = 1.0f / MAX_VELOCITY_RAD_S;
-    static constexpr float kInvAccMax = 1.0f / MAX_ACCELERATION_RAD_S2;
+    static float safeInv_(float value) { return (value > 0.0f) ? (1.0f / value) : 0.0f; }
 
-    static constexpr float kInvPosMax = 1.0f / (360.0f * (PI / 180.0f) / 2.0f);
+    float invVelMax_() const { return safeInv_(config_.max_velocity_rad_s); }
+    float invAccMax_() const { return safeInv_(config_.max_acceleration_rad_s2); }
+    float invPosMax_() const { return safeInv_(angleToRadians(config_.steering_range_deg) / 2.0f); }
+
+private:
+    const PersistedConfig &config_;
 
     static constexpr float kFrictionTransitionInv = 1.0f / 0.05f;
 };

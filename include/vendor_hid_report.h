@@ -2,103 +2,31 @@
 #define VENDOR_HID_REPORT_H
 
 #include <stdint.h>
-#include "tusb.h"
 
 uint8_t const desc_hid_report_vendor[] = {
-    HID_USAGE_PAGE_N(0xFF00, 2),
-    HID_USAGE(0x01),
-    HID_COLLECTION(HID_COLLECTION_APPLICATION),
+    0x06, 0x00, 0xFF, // USAGE_PAGE (Vendor Defined 0xFF00)
+    0x09, 0x01, // USAGE (Vendor Usage 1)
+    0xA1, 0x01, // COLLECTION (Application)
 
-    /* Report ID 2: Detailed Telemetry Input (22 bytes payload) */
-    HID_REPORT_ID(2)
+    // Report ID 21: Config Command (host -> device, 16 bytes)
+    0x85, 0x15, //   REPORT_ID (21)
+    0x09, 0x02, //   USAGE (Vendor Usage 2)
+    0x15, 0x00, //   LOGICAL_MINIMUM (0)
+    0x26, 0xFF, 0x00, //   LOGICAL_MAXIMUM (255)
+    0x75, 0x08, //   REPORT_SIZE (8)
+    0x95, 0x10, //   REPORT_COUNT (16)
+    0x91, 0x02, //   OUTPUT (Data,Var,Abs)
 
-    // int16_t x_axis; (2 bytes)
-    HID_USAGE(0x30), // X
-    HID_LOGICAL_MIN_N(-32768, 2),
-    HID_LOGICAL_MAX_N(32767, 2),
-    HID_REPORT_SIZE(16),
-    HID_REPORT_COUNT(1),
-    HID_INPUT(HID_DATA | HID_VARIABLE | HID_ABSOLUTE),
+    // Report ID 23: Config Response (device -> host, 16 bytes)
+    0x85, 0x17, //   REPORT_ID (23)
+    0x09, 0x03, //   USAGE (Vendor Usage 3)
+    0x15, 0x00, //   LOGICAL_MINIMUM (0)
+    0x26, 0xFF, 0x00, //   LOGICAL_MAXIMUM (255)
+    0x75, 0x08, //   REPORT_SIZE (8)
+    0x95, 0x10, //   REPORT_COUNT (16)
+    0x81, 0x02, //   INPUT (Data,Var,Abs)
 
-    // int32_t raw_encoder; (4 bytes)
-    HID_USAGE(0x31), // Y / Encoder
-    // Logical Min -2147483648 (0x80000000) -> Tag 0x17, Data 00 00 00 80
-    0x17,
-    0x00,
-    0x00,
-    0x00,
-    0x80,
-    // Logical Max 2147483647 (0x7FFFFFFF) -> Tag 0x27, Data FF FF FF 7F
-    0x27,
-    0xFF,
-    0xFF,
-    0xFF,
-    0x7F,
-    HID_REPORT_SIZE(32),
-    HID_REPORT_COUNT(1),
-    HID_INPUT(HID_DATA | HID_VARIABLE | HID_ABSOLUTE),
-
-    // uint8_t axis_state;
-    // uint8_t status_flags; (2 bytes total)
-    HID_USAGE(0x32), // Status
-    HID_LOGICAL_MIN(0),
-    HID_LOGICAL_MAX(255),
-    HID_REPORT_SIZE(8),
-    HID_REPORT_COUNT(2),
-    HID_INPUT(HID_DATA | HID_VARIABLE | HID_ABSOLUTE),
-
-    // uint16_t vbus_mv;
-    // int16_t i_q_ma;
-    // int16_t i_d_ma; (6 bytes total)
-    HID_USAGE(0x33), // Electrical
-    HID_LOGICAL_MIN_N(-32768, 2),
-    HID_LOGICAL_MAX_N(32767, 2),
-    HID_REPORT_SIZE(16),
-    HID_REPORT_COUNT(3),
-    HID_INPUT(HID_DATA | HID_VARIABLE | HID_ABSOLUTE),
-
-    // uint8_t motor_temp;
-    // uint8_t mosfet_temp; (2 bytes total)
-    HID_USAGE(0x34), // Thermal
-    HID_LOGICAL_MIN(0),
-    HID_LOGICAL_MAX(255),
-    HID_REPORT_SIZE(8),
-    HID_REPORT_COUNT(2),
-    HID_INPUT(HID_DATA | HID_VARIABLE | HID_ABSOLUTE),
-
-    // uint16_t torque_setpoint; (2 bytes)
-    HID_USAGE(0x35),
-    HID_LOGICAL_MIN(0),
-    HID_LOGICAL_MAX_N(65535, 2),
-    HID_REPORT_SIZE(16),
-    HID_REPORT_COUNT(1),
-    HID_INPUT(HID_DATA | HID_VARIABLE | HID_ABSOLUTE),
-
-    // uint32_t error_code; (4 bytes)
-    HID_USAGE(0x36),
-    // Logical Min 0
-    HID_LOGICAL_MIN(0),
-    // Logical Max 4294967295 (0xFFFFFFFF) -> Tag 0x27, Data FF FF FF FF
-    0x27,
-    0xFF,
-    0xFF,
-    0xFF,
-    0xFF,
-    HID_REPORT_SIZE(32),
-    HID_REPORT_COUNT(1),
-    HID_INPUT(HID_DATA | HID_VARIABLE | HID_ABSOLUTE),
-
-    /* Report ID 21: Configuration Output (8 bytes payload) */
-
-    HID_REPORT_ID(21)
-        HID_USAGE(0x10),
-    HID_LOGICAL_MIN(0),
-    HID_LOGICAL_MAX(255),
-    HID_REPORT_SIZE(8),
-    HID_REPORT_COUNT(8), // Generic 8-byte buffer
-    HID_OUTPUT(HID_DATA | HID_VARIABLE | HID_ABSOLUTE),
-
-    HID_COLLECTION_END,
+    0xC0, // END_COLLECTION
 };
 
 #endif // VENDOR_HID_REPORT_H

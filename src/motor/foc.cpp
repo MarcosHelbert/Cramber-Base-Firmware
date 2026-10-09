@@ -1,9 +1,9 @@
 #include "foc.h"
 
 #include <algorithm>
+#include <FastMath.h>
 
-#include <svm.h>
-#include <config.h>
+#include "svm.h"
 
 void FOC::reset()
 {
@@ -35,21 +35,20 @@ void FOC::update(float ia, float ib, float ic, float electrical_angle, float ome
     invClarke(alpha, beta, va_, vb_, vc_);
 }
 
-void FOC::setGains(float kp_gain, float ki_gain)
+void FOC::updateGainsFromConfig()
 {
-    kp_ = kp_gain;
-    ki_ = ki_gain;
+    kp_ = config_.current_kp;
+    ki_ = config_.current_ki;
 }
 
 void FOC::setTargets(float id, float iq)
 {
-    id_target_ = std::clamp(id, -MAX_CURRENT, MAX_CURRENT);
-    iq_target_ = std::clamp(iq, -MAX_CURRENT, MAX_CURRENT);
+    id_target_ = std::clamp(id, -config_.max_current, config_.max_current);
+    iq_target_ = std::clamp(iq, -config_.max_current, config_.max_current);
 }
 
 void FOC::current_control(float vmax, float d, float q, float &vd, float &vq, float omega_e, float L, float flux)
 {
-    vmax_ = vmax;
     float err_d = id_target_ - d;
     float err_q = iq_target_ - q;
 

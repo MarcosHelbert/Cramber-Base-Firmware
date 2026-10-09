@@ -5,18 +5,10 @@
 #include <libopencm3/stm32/timer.h>
 
 #include <algorithm>
+
 #include <debug.h>
 
-BrakingResistor::BrakingResistor(float resistance_ohm, float power_rating_w, float max_regen_current, uint32_t pwm_hz)
-    : R_(resistance_ohm),
-      Pmax_(power_rating_w),
-      pwm_hz_(pwm_hz),
-      max_regen_current_(max_regen_current),
-      arr_(0)
-{
-}
-
-void BrakingResistor::init()
+void BrakeResistor::init()
 {
     rcc_periph_clock_enable(RCC_TIM2);
     rcc_periph_clock_enable(RCC_GPIOB);
@@ -31,7 +23,7 @@ void BrakingResistor::init()
     if (ppre1 != 0)
         tim_clk *= 2;
 
-    arr_ = (tim_clk / pwm_hz_) - 1;
+    arr_ = (tim_clk / config_.pwm_freq_hz) - 1;
 
     timer_set_prescaler(TIM2, 0);
     timer_set_period(TIM2, arr_);
@@ -48,9 +40,11 @@ void BrakingResistor::init()
     setDuty_(0.0f);
 }
 
-void BrakingResistor::update(float vbus, float ibus)
+void BrakeResistor::update(float vbus, float ibus)
 {
-    if (!armed_ || R_ <= 0.0f || Pmax_ <= 0.0f || vbus <= 1.0f)
+    const float Pmax = config_.brake_resistor_power_rating_w;
+    const float R = config_.brake_resistor_resistance_ohm;
+    if (!armed_ || R <= 0.0f || Pmax <= 0.0f || vbus <= 1.0f)
     {
         setDuty_(0.0f);
         return;
@@ -62,10 +56,10 @@ void BrakingResistor::update(float vbus, float ibus)
     static float ibus_filt = 0.0f;
     ibus_filt += (ibus - ibus_filt) * 0.5f;
 
-    brake_current = -ibus_filt - max_regen_current_;
+    brake_current = -ibus_filt - config_.brake_resistor_max_regen_current;
     if (brake_current > 0.0f)
     {
-        brake_duty = (brake_current * R_) / vbus;
+        brake_duty = (brake_current * R) / vbus;
     }
 
     if (brake_duty >= 0.95f)
@@ -77,7 +71,7 @@ void BrakingResistor::update(float vbus, float ibus)
         saturated_ = false;
     }
 
-    float max_duty = Pmax_ / ((vbus * vbus) / R_);
+    float max_duty = Pmax / ((vbus * vbus) / R);
     if (brake_duty > max_duty)
     {
         brake_duty = max_duty;
@@ -87,7 +81,7 @@ void BrakingResistor::update(float vbus, float ibus)
     setDuty_(duty_);
 }
 
-void BrakingResistor::setDuty_(float duty)
+void BrakeResistor::setDuty_(float duty)
 {
     duty = std::clamp(duty, 0.0f, 0.95f);
 
@@ -97,7 +91,7 @@ void BrakingResistor::setDuty_(float duty)
     timer_set_oc_value(TIM2, TIM_OC4, high_on);
 }
 
-void BrakingResistor::arm()
+void BrakeResistor::arm()
 {
     armed_ = true;
     cdcLog("[BRK] arm\r\n");
@@ -105,7 +99,7 @@ void BrakingResistor::arm()
     timer_enable_oc_output(TIM2, TIM_OC4);
 }
 
-void BrakingResistor::disarm()
+void BrakeResistor::disarm()
 {
     armed_ = false;
 

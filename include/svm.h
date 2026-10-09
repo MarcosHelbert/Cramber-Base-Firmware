@@ -1,8 +1,6 @@
 #ifndef SVM_H
 #define SVM_H
 
-#include <algorithm>
-
 #include "utils.h"
 
 inline void clarke(float ia, float ib, float ic, float &alpha, float &beta)

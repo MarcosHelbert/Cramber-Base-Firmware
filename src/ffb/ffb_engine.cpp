@@ -26,7 +26,7 @@ int32_t FFBEngine::damper(const EffectCondition &c, float velocity)
     if (!c.isActive())
         return 0;
 
-    float v = velocity * kInvVelMax;
+    float v = velocity * invVelMax_();
 
     const bool forward = (v >= 0.0f);
     const float coeff = forward ? c.posCoeffNorm : c.negCoeffNorm;
@@ -41,7 +41,7 @@ int32_t FFBEngine::spring(const EffectCondition &c, float position)
     if (!c.isActive())
         return 0;
 
-    float pos = smoothDeadband(position * kInvPosMax, c.deadBandNorm);
+    float pos = smoothDeadband(position * invPosMax_(), c.deadBandNorm);
 
     const bool positive = (pos >= 0.0f);
     const float coeff = positive ? c.posCoeffNorm : c.negCoeffNorm;
@@ -56,8 +56,8 @@ int32_t FFBEngine::inertia(const EffectCondition &c, float velocity, float accel
     if (!c.isActive())
         return 0;
 
-    float a = acceleration * kInvAccMax;
-    float v = velocity * kInvVelMax;
+    float a = acceleration * invAccMax_();
+    // float v = velocity * invVelMax_();
 
     // float force = (-c.posCoeffNorm * a - c.negCoeffNorm * v) * 32767.0f;
     float force = -c.posCoeffNorm * a * 32767.0f;
@@ -70,7 +70,7 @@ int32_t FFBEngine::friction(const EffectCondition &c, float velocity)
     if (!c.isActive())
         return 0;
 
-    float v = velocity * kInvVelMax;
+    float v = velocity * invVelMax_();
 
     static constexpr float kVStiction = 0.12f;
 
@@ -192,7 +192,7 @@ float FFBEngine::computeTorqueNorm(
     const float globalGainF = (float)globalGain / 255.0f;
 
     float torque = 0.0f;
-    float comp = 0.0f;
+    // float comp = 0.0f;
 
     uint32_t mask = usedMask;
 

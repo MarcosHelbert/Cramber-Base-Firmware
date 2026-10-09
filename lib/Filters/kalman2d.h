@@ -7,6 +7,16 @@
 class KalmanFilter2D
 {
 public:
+    /**
+     * @brief Constructs a 2-state (position, velocity) Kalman filter with a
+     * constant-velocity motion model.
+     *
+     * @param dt Fixed time step between predict() calls, in seconds.
+     * @param processNoise0 Process noise covariance for the position state.
+     * @param processNoise1 Process noise covariance for the velocity state.
+     * @param measurementNoise Measurement noise covariance (R) for the
+     * position measurement.
+     */
     KalmanFilter2D(float dt, float processNoise0, float processNoise1, float measurementNoise)
         : dt_(dt),
           q0_(processNoise0),
@@ -15,6 +25,11 @@ public:
     {
     }
 
+    /**
+     * @brief Advances the state estimate and error covariance by one time
+     * step using the constant-velocity motion model, without incorporating
+     * a new measurement.
+     */
     void predict()
     {
         x0_ += x1_ * dt_;
@@ -25,6 +40,12 @@ public:
         p11_ += q1_;
     }
 
+    /**
+     * @brief Corrects the predicted state with a new position measurement.
+     * Must be called after predict() to complete one filter cycle.
+     *
+     * @param measurement Latest raw measurement of the position state.
+     */
     void update(float measurement)
     {
         const float y = measurement - x0_;
@@ -46,6 +67,12 @@ public:
         p11_ -= k1 * p01;
     }
 
+    /**
+     * @brief Resets the state estimate and error covariance.
+     *
+     * @param state0 Position value to reset to.
+     * @param state1 Velocity value to reset to.
+     */
     void reset(float state0 = 0.0f, float state1 = 0.0f)
     {
         x0_ = state0;
@@ -57,7 +84,14 @@ public:
         p11_ = 1.0f;
     }
 
+    /**
+     * @brief Returns the current position estimate.
+     */
     float state0() const { return x0_; }
+
+    /**
+     * @brief Returns the current velocity estimate.
+     */
     float state1() const { return x1_; }
 
 private:

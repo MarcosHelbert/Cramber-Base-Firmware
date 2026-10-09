@@ -235,12 +235,16 @@ uint8_t const desc_hid_report_joystick[] = {
     0x09, 0x64,                   // Usage Negative Saturation
     0x16, 0x00, 0x00,             // Logical Minimum 0
     0x26, 0xFF, 0x7F,             // Logical Maximum (32767)
+    0x36, 0x00, 0x00,             // Physical Minimum 0
+    0x46, 0xFF, 0x7F,             // Physical Maximum (32767)
     0x75, 0x10,                   // Report Size 16
     0x95, 0x02,                   // Report Count 2
     0x91, 0x02,                   // Output (Variable)
     0x09, 0x65,                   // Usage Dead Band
     0x16, 0x00, 0x00,             // Logical Minimum 0
     0x26, 0xFF, 0x7F,             // Logical Maximum (32767)
+    0x36, 0x00, 0x00,             // Physical Minimum 0
+    0x46, 0xFF, 0x7F,             // Physical Maximum (32767)
     0x75, 0x10,                   // Report Size 16
     0x95, 0x01,                   // Report Count 1
     0x91, 0x02,                   // Output (Variable)
@@ -261,7 +265,7 @@ uint8_t const desc_hid_report_joystick[] = {
     0x16, 0x00, 0x00,             //    Logical Minimum 0
     0x26, 0xff, 0x7f,             //    Logical Maximum 7FFFh (32767d)
     0x36, 0x00, 0x00,             //    Physical Minimum 0
-    0x26, 0xff, 0x7f,             //    Logical Maximum 7FFFh (32767d)
+    0x46, 0xff, 0x7f,             //    Physical Maximum 7FFFh (32767d)
     0x75, 0x10,                   //    Report Size 16
     0x95, 0x01,                   //    Report Count 1
     0x91, 0x02,                   //    Output (Variable)

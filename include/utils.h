@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <FastMath.h>
 
 /**
@@ -186,6 +187,21 @@ constexpr T smoothDeadband(T x, T dead)
         return std::copysign(t * t, x);
     }
     return x;
+}
+
+/**
+ * @brief Check if a float value is NaN (Not a Number) using bit-level inspection.
+ *
+ * @param v The float value to check
+ * @return true if the value is NaN, false otherwise
+ */
+inline bool isNanBits(float v)
+{
+    uint32_t bits;
+    std::memcpy(&bits, &v, sizeof(bits));
+    uint32_t exponent = (bits >> 23) & 0xFF;
+    uint32_t mantissa = bits & 0x7FFFFF;
+    return exponent == 0xFF && mantissa != 0;
 }
 
 #endif // UTILS_H

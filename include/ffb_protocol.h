@@ -2,7 +2,6 @@
 #define FFB_PROTOCOL_H
 
 #include <cstdint>
-#include <config.h>
 
 #define FFB_ID_OFFSET 0x00
 #define MAX_EFFECTS 10

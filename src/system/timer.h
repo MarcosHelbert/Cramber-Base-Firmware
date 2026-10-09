@@ -1,10 +1,24 @@
 #ifndef TIMER_H
 #define TIMER_H
 
+#include <libopencm3/cm3/scs.h>
+#include <libopencm3/cm3/dwt.h>
+
 #include <stdint.h>
 #include <FreeRTOS.h>
 #include <task.h>
-#include "dwt.h"
+
+inline void dwt_init()
+{
+    SCS_DEMCR |= SCS_DEMCR_TRCENA;
+    DWT_CYCCNT = 0u;
+    DWT_CTRL |= DWT_CTRL_CYCCNTENA;
+}
+
+inline uint32_t dwt_get_cycles()
+{
+    return DWT_CYCCNT;
+}
 
 inline uint32_t millis(void)
 {
@@ -18,18 +32,6 @@ inline uint32_t millis(void)
 
 inline uint32_t micros()
 {
-    if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED)
-    {
-        uint32_t ticks;
-        uint32_t cycles;
-
-        vTaskSuspendAll();
-        ticks = xTaskGetTickCount();
-        cycles = dwt_get_cycles();
-        xTaskResumeAll();
-
-        return (ticks * 1000) + ((cycles % (168 * 1000)) / 168);
-    }
     return dwt_get_cycles() / 168;
 }
 

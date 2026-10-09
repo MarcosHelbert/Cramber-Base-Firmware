@@ -4,8 +4,10 @@
 #include <vendor_hid_report.h>
 
 #include <ffb/ffb_manager.h>
+#include <protocol/config_protocol.h>
 
 extern FFBManager ffb_manager;
+extern ConfigProtocol config_protocol;
 
 //--------------------------------------------------------------------+
 // Device Identity
@@ -102,15 +104,17 @@ uint8_t const desc_configuration[] = {
     TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN,
                           TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 500),
 
+#ifdef DEBUG
     TUD_HID_DESCRIPTOR(ITF_NUM_JOYSTICK, 0, HID_ITF_PROTOCOL_NONE,
                        sizeof(desc_hid_report_joystick), EPNUM_JOYSTICK,
                        CFG_TUD_HID_EP_BUFSIZE, 8),
-
-#ifdef DEBUG
     TUD_CDC_DESCRIPTOR(ITF_NUM_CDC_CTRL, 4, EPNUM_CDC_NOTIF, 8,
                        EPNUM_CDC_OUT, EPNUM_CDC_IN, 64),
 #else
-    TUD_HID_DESCRIPTOR(ITF_NUM_VENDOR, 0, HID_ITF_PROTOCOL_NONE,
+    TUD_HID_DESCRIPTOR(ITF_NUM_JOYSTICK, 4, HID_ITF_PROTOCOL_NONE,
+                       sizeof(desc_hid_report_joystick), EPNUM_JOYSTICK,
+                       CFG_TUD_HID_EP_BUFSIZE, 8),
+    TUD_HID_DESCRIPTOR(ITF_NUM_VENDOR, 5, HID_ITF_PROTOCOL_NONE,
                        sizeof(desc_hid_report_vendor), EPNUM_VENDOR,
                        CFG_TUD_HID_EP_BUFSIZE, 8),
 #endif
@@ -132,6 +136,9 @@ char const *string_desc_arr[] = {
     "CAMBER-DD-2026-001",       // 3: Serials,
 #ifdef DEBUG
     "Cramber Debug Interface", // 4: CDC Interface
+#else
+    "Joystick Interface",      // 4: Joystick Interface
+    "Vendor Config Interface", // 5: Vendor Interface
 #endif
 };
 
@@ -173,6 +180,13 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
         return ffb_manager.hidGet(report_id, buffer);
     }
 
+#ifndef DEBUG
+    if (itf == ITF_NUM_VENDOR)
+    {
+        return config_protocol.hidGet(report_id, buffer);
+    }
+#endif
+
     return 0;
 }
 
@@ -187,6 +201,8 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
 #ifndef DEBUG
     if (itf == ITF_NUM_VENDOR)
     {
+        config_protocol.hidSet(report_id, buffer, bufsize);
+        return;
     }
 #endif
 

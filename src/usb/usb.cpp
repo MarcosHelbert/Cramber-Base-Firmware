@@ -1,7 +1,5 @@
 #include "usb.h"
 
-#include <algorithm>
-
 #include <libopencm3/stm32/rcc.h>
 #include <libopencm3/stm32/gpio.h>
 #include <libopencm3/cm3/nvic.h>
@@ -9,14 +7,9 @@
 
 #include <tusb.h>
 
-#include <system_state.h>
-#include <hardware/timer.h>
-#include <config.h>
 #include <debug.h>
 
-USB::USB()
-{
-}
+USB::USB() {}
 
 void USB::init()
 {
@@ -36,7 +29,10 @@ void USB::init()
 
     nvic_set_priority(NVIC_OTG_FS_IRQ, 6 << 4);
     nvic_enable_irq(NVIC_OTG_FS_IRQ);
+}
 
+void USB::start()
+{
     tusb_init();
 
     for (volatile int i = 0; i < 200000; ++i)
@@ -57,27 +53,6 @@ void USB::update()
     {
         tud_hid_n_report(JOYSTICK_ITF, JOYSTICK_REPORT_ID, &joystickReport_, sizeof(joystickReport_));
     }
-}
-
-void USB::updateAxis(int32_t positionCounts)
-{
-    int16_t scaledPosition = scale_position_to_axis_(positionCounts);
-    joystickReport_.x_axis = scaledPosition;
-}
-
-int16_t USB::scale_position_to_axis_(int32_t positionCounts) const
-{
-    float max_degrees = g_state.steering_range_deg / 2.0f;
-    int32_t max_counts = static_cast<int32_t>(max_degrees * (ENCODER_CPR / 360.0f));
-
-    if (max_counts == 0)
-        return 0;
-
-    int32_t relative_pos = positionCounts - g_state.mechanical_offset;
-    relative_pos = std::clamp(relative_pos, -max_counts, max_counts);
-    int32_t scaled = (int32_t)((int64_t)relative_pos * 32767 / max_counts);
-
-    return static_cast<int16_t>(scaled);
 }
 
 extern "C" void otg_fs_isr(void)

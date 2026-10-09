@@ -4,14 +4,14 @@
 #include <array>
 #include <cstdint>
 
-#include <config.h>
 #include <ffb_protocol.h>
+#include <persistence/config_store.h>
 #include "ffb_engine.h"
 
 class FFBManager
 {
 public:
-    FFBManager();
+    explicit FFBManager(const PersistedConfig &config);
 
     void startFFB()
     {
@@ -33,19 +33,6 @@ public:
     float getTorque(float positionRad, float velocityRadS, float accelerationRadS2, uint32_t nowMs);
 
 private:
-    bool ffbActive_ = false;
-    bool devicePaused_ = false;
-    uint8_t gain_ = 255;
-
-    FFBEngine engine_;
-    std::array<Effect, MAX_EFFECTS> effects_{};
-
-    uint16_t usedEffects_ = 0;
-    uint32_t activeMask_ = 0;
-
-    BlockLoad_Data blockLoad_{};
-    PIDPool_Data pool_{};
-
     bool isValidIndex_(uint8_t index) const { return index > 0 && index <= effects_.size(); }
     void updateBlockLoad_(uint8_t index, uint8_t status);
 
@@ -66,6 +53,22 @@ private:
     void createNewEffect_(NewEffect_Data *d);
 
     int32_t findFreeEffectIndex_(uint8_t type) const;
+
+private:
+    const PersistedConfig &config_;
+
+    bool ffbActive_ = false;
+    bool devicePaused_ = false;
+    uint8_t gain_ = 255;
+
+    FFBEngine engine_;
+    std::array<Effect, MAX_EFFECTS> effects_{};
+
+    uint16_t usedEffects_ = 0;
+    uint32_t activeMask_ = 0;
+
+    BlockLoad_Data blockLoad_{};
+    PIDPool_Data pool_{};
 };
 
 #endif // FFB_MANAGER_H

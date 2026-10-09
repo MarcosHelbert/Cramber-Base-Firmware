@@ -5,27 +5,28 @@
 #include <libopencm3/stm32/adc.h>
 
 #include <hardware/adc.h>
-#include <config.h>
+#include <system/timer.h>
 
 void CurrentSensor::init()
 {
     updateScale();
 }
 
-void CurrentSensor::updateScale()
+bool CurrentSensor::waitForSample()
 {
-    const float v_ref = 3.3f;
-    const float adc_max = 4096.0f;
+    const uint32_t timeout_us = 10000;
 
-    current_scale_ = (v_ref / adc_max) / (CURRENT_AMP_GAIN * SHUNT_RESISTANCE);
-}
-
-void CurrentSensor::waitForSample()
-{
     ADC_SR(ADC1) &= ~(ADC_SR_JEOC | ADC_SR_OVR);
+
+    uint32_t start = micros();
     while (!(ADC_SR(ADC1) & ADC_SR_JEOC))
-        ;
+    {
+        if ((micros() - start) > timeout_us)
+            return false;
+    }
+
     ADC_SR(ADC1) &= ~ADC_SR_JEOC;
+    return true;
 }
 
 void CurrentSensor::calibrateOffsets(uint16_t samples)
@@ -35,22 +36,25 @@ void CurrentSensor::calibrateOffsets(uint16_t samples)
 
     float sum_b = 0.0f;
     float sum_c = 0.0f;
+    uint16_t valid = 0;
 
     for (uint16_t i = 0; i < samples; i++)
     {
         iwdg_reset();
-        waitForSample();
+
+        if (!waitForSample())
+            continue;
+
         sum_b += ADC::getInjected(ADC::InjectedChannel::IB);
         sum_c += ADC::getInjected(ADC::InjectedChannel::IC);
+        valid++;
     }
 
-    offset_ib_ = sum_b / samples;
-    offset_ic_ = sum_c / samples;
-}
+    if (valid == 0)
+        return;
 
-float CurrentSensor::adcToCurrent(uint16_t raw, float offset) const
-{
-    return (static_cast<float>(raw) - offset) * current_scale_;
+    offset_ib_ = sum_b / valid;
+    offset_ic_ = sum_c / valid;
 }
 
 void CurrentSensor::update()
@@ -70,4 +74,19 @@ void CurrentSensor::update()
 void CurrentSensor::reset()
 {
     i_a_ = i_b_ = i_c_ = 0.0f;
+    offset_ib_ = 2048.0f;
+    offset_ic_ = 2048.0f;
+}
+
+float CurrentSensor::adcToCurrent(uint16_t raw, float offset) const
+{
+    return (static_cast<float>(raw) - offset) * current_scale_;
+}
+
+void CurrentSensor::updateScale()
+{
+    const float v_ref = 3.3f;
+    const float adc_max = 4096.0f;
+
+    current_scale_ = (v_ref / adc_max) / (config_.current_amp_gain * config_.shunt_resistance);
 }

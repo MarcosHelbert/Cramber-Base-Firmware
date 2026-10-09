@@ -1,307 +1,345 @@
 #include "axis.h"
 
-#include <algorithm>
+#include <utils.h>
+#include <FastMath.h>
 
-#include <config.h>
-#include <system_state.h>
+Axis::Axis(Motor &motor, Encoder &encoder)
+    : motor_(motor), encoder_(encoder) {}
 
-#include <hardware/timer.h>
-
-Axis::Axis(
-    uint32_t frequency,
-    FOC &foc,
-    Encoder &encoder,
-    BumpStop &bumpstop,
-    Motor &motor,
-    Anticogging &anticogging,
-    FFBManager &ffb_manager)
-    : frequency_(frequency),
-      foc_(foc),
-      encoder_(encoder),
-      bumpstop_(bumpstop),
-      motor_(motor),
-      anticogging_(anticogging),
-      ffb_manager_(ffb_manager)
+float Axis::smoothstepRamp_(float elapsed_s, float duration_s) const
 {
-    float dt = 1.0f / frequency_;
-    max_step_ = MAX_DI_DT * dt;
+    float x = elapsed_s / duration_s;
+    if (x > 1.0f)
+        x = 1.0f;
+    return (3.0f * x * x) - (2.0f * x * x * x);
 }
 
-void Axis::init()
+bool Axis::startAlignment()
 {
+    if (!motor_.arm())
+        return false;
+
+    alignment_phase_ = AlignmentPhase::SETTLE;
+    last_alignment_fail_reason_ = AlignmentFailReason::NONE;
+    alignment_electrical_angle_ = 0.0f;
+    id_target_ = 0.0f;
+    alignment_settle_time_s_ = 0.0f;
+    alignment_scan_distance_ = 0.0f;
+    alignment_start_counts_ = 0;
+    alignment_count_sum_ = 0;
+    alignment_step_count_ = 0;
+
+    state_ = State::ALIGNING;
+    return true;
+}
+
+void Axis::stopAlignment()
+{
+    if (alignment_phase_ == AlignmentPhase::DONE)
+    {
+        g_config.encoder_offset_rad = alignment_electrical_angle_;
+        g_config.encoder_calibrated = true;
+    }
+
+    motor_.disarm();
     state_ = State::IDLE;
 }
 
-void Axis::update()
+void Axis::update(float dt)
 {
-    switch (state_)
+    if (state_ == State::LUT_CALIBRATING)
     {
-    case State::SEARCH_INDEX:
-    {
-        const float dt = 1.0f / frequency_;
-        const float ramp_time = 0.5f;
-        time_ += dt;
-
-        float x = time_ / ramp_time;
-        if (x > 1.0f)
-            x = 1.0f;
-
-        float smooth = (3.0f * square(x)) - (2.0f * cube(x));
-        float target_velocity = CALIBRATION_SCAN_OMEGA * smooth;
-
-        open_loop_angle_ += target_velocity * dt;
-        if (open_loop_angle_ > TWO_PI)
-            open_loop_angle_ -= TWO_PI;
-
-        float iq = CALIBRATION_CURRENT * smooth;
-        foc_.setTargets(0.0f, iq);
-
-        if (x >= 1.0f && !index_detected_)
-        {
-            encoder_.setIdxSubscribe(true);
-            index_detected_ = true;
-        }
-
-        if (index_detected_ && encoder_.isIndexed())
-        {
-            foc_.setTargets(0.0f, 0.0f);
-
-            open_loop_angle_ = 0.0f;
-            time_ = 0.0f;
-            align_start_ms_ = millis();
-
-            state_ = State::ENCODER_ALIGNMENT_START;
-            index_detected_ = false;
-        }
-
-        break;
+        updateLutCalibration(dt);
+        return;
     }
 
-    case State::ENCODER_ALIGNMENT_START:
+    constexpr float kSettleTimeS = 0.05f;
+    constexpr float kPi = TWO_PI / 2.0f;
+    constexpr float kScanOmegaRadPerS = 4.0f * kPi;
+    const float kScanDistanceRad = TWO_PI * static_cast<float>(g_config.motor_pole_pairs);
+    constexpr float kCalibrationRange = 0.05f;
+    constexpr int32_t kDirectionDeadband = 8;
+
+    int32_t position_counts = encoder_.positionCounts();
+
+    switch (alignment_phase_)
     {
-        const float dt = 1.0f / frequency_;
-        open_loop_angle_ = 0.0f;
+    case AlignmentPhase::SETTLE:
+    {
+        alignment_settle_time_s_ += dt;
+        float smooth = smoothstepRamp_(alignment_settle_time_s_, kSettleTimeS);
+        alignment_electrical_angle_ = 0.0f;
+        id_target_ = g_config.calibration_test_current * smooth;
 
-        const float ramp_time = 0.05f;
-        time_ += dt;
-
-        float x = time_ / ramp_time;
-        if (x > 1.0f)
-            x = 1.0f;
-
-        float smooth = (3.0f * square(x)) - (2.0f * cube(x));
-        float id = CALIBRATION_CURRENT * smooth;
-
-        foc_.setTargets(id, 0.0f);
-
-        if (millis() - align_start_ms_ >= CALIBRATION_LOCK_DURATION_MS)
+        if (alignment_settle_time_s_ >= kSettleTimeS)
         {
-            init_enc_val_ = encoder_.position();
-            encvaluesum_ = 0;
-            num_steps_ = 0;
-            open_loop_distance_ = 0.0f;
-
-            state_ = State::ENCODER_ALIGNMENT_SCAN_FWD;
+            alignment_start_counts_ = position_counts;
+            alignment_count_sum_ = 0;
+            alignment_step_count_ = 0;
+            alignment_scan_distance_ = 0.0f;
+            alignment_phase_ = AlignmentPhase::SCAN_FWD;
         }
         break;
     }
 
-    case State::ENCODER_ALIGNMENT_SCAN_FWD:
+    case AlignmentPhase::SCAN_FWD:
     {
-        const float dt = 1.0f / frequency_;
-        open_loop_distance_ += CALIBRATION_SCAN_OMEGA * dt;
+        alignment_scan_distance_ += kScanOmegaRadPerS * dt;
+        alignment_electrical_angle_ = normalizeAngle2Pi(alignment_scan_distance_);
+        id_target_ = g_config.calibration_test_current;
 
-        open_loop_angle_ = fmodf(open_loop_distance_, TWO_PI);
-        if (open_loop_angle_ < 0.0f)
-            open_loop_angle_ += TWO_PI;
+        alignment_count_sum_ += position_counts;
+        alignment_step_count_++;
 
-        foc_.setTargets(CALIBRATION_CURRENT, 0.0f);
-
-        encvaluesum_ += encoder_.position();
-        num_steps_++;
-
-        if (open_loop_distance_ >= CALIBRATION_SCAN_DISTANCE)
+        if (alignment_scan_distance_ >= kScanDistanceRad)
         {
-            int32_t current_enc = encoder_.position();
+            int32_t delta = position_counts - alignment_start_counts_;
 
-            // Determine direction
-            if (current_enc > init_enc_val_ + 8)
+            if (delta > kDirectionDeadband || delta < -kDirectionDeadband)
             {
-                encoder_direction_ = 1;
-            }
-            else if (current_enc < init_enc_val_ - 8)
-            {
-                encoder_direction_ = -1;
+                float elec_rad_per_count = (static_cast<float>(g_config.motor_pole_pairs) * TWO_PI) / static_cast<float>(g_config.encoder_cpr);
+                float expected_count_delta = kScanDistanceRad / elec_rad_per_count;
+                float actual = std::abs(static_cast<float>(delta));
+
+                if (std::abs(actual - expected_count_delta) / expected_count_delta > kCalibrationRange)
+                {
+                    alignment_phase_ = AlignmentPhase::FAILED;
+                    last_alignment_fail_reason_ = AlignmentFailReason::CPR_POLE_PAIRS_MISMATCH;
+                    break;
+                }
             }
             else
             {
-                setError(Error::ERROR_ENCODER_FAILED);
-                return;
+                alignment_phase_ = AlignmentPhase::FAILED;
+                last_alignment_fail_reason_ = AlignmentFailReason::ENCODER_DIRECTION_UNCLEAR;
+                break;
             }
 
-            float elec_rad_per_enc = (MOTOR_POLE_PAIRS * TWO_PI) / (float)ENCODER_CPR;
-            float expected_encoder_delta = CALIBRATION_SCAN_DISTANCE / elec_rad_per_enc;
-            float actual_response = abs((float)(current_enc - init_enc_val_));
-
-            if (abs(actual_response - expected_encoder_delta) / expected_encoder_delta > CALIBRATION_RANGE)
-            {
-                setError(Error::ERROR_CPR_POLEPAIRS_MISMATCH);
-                return;
-            }
-
-            state_ = State::ENCODER_ALIGNMENT_SCAN_REV;
+            alignment_phase_ = AlignmentPhase::SCAN_REV;
         }
         break;
     }
 
-    case State::ENCODER_ALIGNMENT_SCAN_REV:
+    case AlignmentPhase::SCAN_REV:
     {
-        const float dt = 1.0f / frequency_;
-        open_loop_distance_ -= CALIBRATION_SCAN_OMEGA * dt;
+        alignment_scan_distance_ -= kScanOmegaRadPerS * dt;
+        alignment_electrical_angle_ = normalizeAngle2Pi(alignment_scan_distance_);
+        id_target_ = g_config.calibration_test_current;
 
-        open_loop_angle_ = fmodf(open_loop_distance_, TWO_PI);
-        if (open_loop_angle_ < 0.0f)
-            open_loop_angle_ += TWO_PI;
+        alignment_count_sum_ += position_counts;
+        alignment_step_count_++;
 
-        foc_.setTargets(CALIBRATION_CURRENT, 0.0f);
-
-        encvaluesum_ += encoder_.position();
-        num_steps_++;
-
-        if (open_loop_distance_ <= 0.0f)
+        if (alignment_scan_distance_ <= 0.0f)
         {
-            float average_enc_count = (float)encvaluesum_ / (float)num_steps_;
-            float offset = (average_enc_count / (float)ENCODER_CPR) * TWO_PI * MOTOR_POLE_PAIRS;
+            float average_counts = static_cast<float>(alignment_count_sum_) / static_cast<float>(alignment_step_count_);
+            float offset = (average_counts / static_cast<float>(g_config.encoder_cpr)) * TWO_PI * static_cast<float>(g_config.motor_pole_pairs);
 
-            g_state.encoder_offset_rad = fmodf(offset, TWO_PI);
-            if (g_state.encoder_offset_rad < 0.0f)
-                g_state.encoder_offset_rad += TWO_PI;
-
-            foc_.setTargets(0.0f, 0.0f);
-            foc_.reset();
-
-            encoder_.setIdxSubscribe(false);
-
-            state_ = State::ANTICOGGING_CALIBRATION;
+            alignment_electrical_angle_ = normalizeAngle2Pi(offset);
+            id_target_ = 0.0f;
+            alignment_phase_ = AlignmentPhase::DONE;
         }
         break;
     }
 
-    case State::ANTICOGGING_CALIBRATION:
-    {
-        if (!COGGING_COMPENSATION_ENABLED)
-        {
-            state_ = State::READY;
-            break;
-        }
-
-        const uint32_t samples = COGGING_COMPENSATION_SAMPLING_POINTS;
-
-        float target_mech = (static_cast<float>(anticogging_index_) / samples) * TWO_PI;
-        float velocity = encoder_.velocity();
-
-        float pos_err = target_mech - encoder_.mechanicalAngle();
-        pos_err = normalizeAngle(pos_err);
-
-        float torque_p = COGGING_COMPENSATION_KP * pos_err;
-
-        vel_integrator_ += COGGING_COMPENSATION_KI * pos_err * (1.0f / frequency_);
-        vel_integrator_ = std::clamp(vel_integrator_, -MAX_CURRENT, MAX_CURRENT);
-
-        float torque_d = -COGGING_COMPENSATION_KD * velocity;
-
-        float torque = torque_p + torque_d + vel_integrator_;
-        torque = std::clamp(torque, -MAX_CURRENT, MAX_CURRENT);
-        foc_.setTargets(0.0f, torque);
-
-        if (abs(pos_err) <= COGGING_COMPENSATION_POS_EPS && abs(velocity) <= COGGING_COMPENSATION_VEL_EPS)
-        {
-            anticogging_.setSample(anticogging_index_, vel_integrator_);
-
-            anticogging_index_++;
-            vel_integrator_ = 0.0f;
-
-            if (anticogging_index_ >= samples)
-            {
-                foc_.setTargets(0.0f, 0.0f);
-                foc_.reset();
-                anticogging_index_ = 0;
-                state_ = State::READY;
-            }
-        }
-
+    case AlignmentPhase::DONE:
+    case AlignmentPhase::FAILED:
+        id_target_ = 0.0f;
         break;
-    }
-
-    case State::READY:
-    {
-        float torque = 0.0f;
-
-        float positionRad = encoder_.mechanicalAngle();
-        float velocity = encoder_.velocity();
-        float acceleration = encoder_.acceleration();
-
-        torque += ffb_manager_.getTorque(positionRad, velocity, acceleration, millis());
-        torque += bumpstop_.calculate(positionRad, velocity);
-
-        if (COGGING_COMPENSATION_ENABLED)
-        {
-            float anticog = anticogging_.getCompensation(positionRad);
-            anticog = std::clamp(anticog, -0.5f, 0.5f);
-            torque += anticog;
-        }
-
-        torque = std::clamp(torque, -MAX_CURRENT, MAX_CURRENT);
-
-        float delta = torque - iq_prev_;
-        delta = std::clamp(delta, -max_step_, max_step_);
-
-        iq_prev_ += delta;
-
-        foc_.setTargets(0.0f, iq_prev_);
-
-        break;
-    }
-
-    default:
-        break;
-    }
-}
-
-void Axis::setError(Error error)
-{
-    foc_.setTargets(0.0f, 0.0f);
-    error_ = error;
-    if (state_ != State::ERROR)
-        previous_state_ = state_;
-    state_ = State::ERROR;
-}
-
-void Axis::clearError()
-{
-    if (state_ == State::ERROR)
-    {
-        error_ = Error::ERROR_NONE;
-        foc_.reset();
-        iq_prev_ = 0.0f;
-        state_ = previous_state_;
     }
 }
 
 float Axis::getElectricalAngle() const
 {
-    if (state_ == State::SEARCH_INDEX || state_ == State::ENCODER_ALIGNMENT_START || state_ == State::ENCODER_ALIGNMENT_SCAN_FWD || state_ == State::ENCODER_ALIGNMENT_SCAN_REV)
+    if (state_ == State::ALIGNING || state_ == State::LUT_CALIBRATING)
     {
-        return open_loop_angle_;
+        return state_ == State::ALIGNING ? alignment_electrical_angle_ : lut_electrical_angle_;
     }
 
-    return motor_.getElectricalAngle();
+    float mechanical_angle = encoder_.angle();
+    float electrical_angle = (mechanical_angle * static_cast<float>(g_config.motor_pole_pairs)) - g_config.encoder_offset_rad;
+
+    if (g_config.encoder_lut_calibrated)
+    {
+        electrical_angle += lutCorrection_(encoder_.positionCounts());
+    }
+
+    return normalizeAngle2Pi(electrical_angle);
 }
 
-void Axis::start()
+bool Axis::startLutCalibration()
 {
-    if (state_ == State::IDLE)
+    if (!g_config.encoder_calibrated)
     {
-        state_ = State::SEARCH_INDEX;
+        last_lut_fail_reason_ = LutCalibrationFailReason::NOT_ALIGNED;
+        return false;
     }
+
+    if (!motor_.arm())
+    {
+        last_lut_fail_reason_ = LutCalibrationFailReason::ARM_FAILED;
+        return false;
+    }
+
+    lut_phase_ = LutCalibrationPhase::SETTLE;
+    last_lut_fail_reason_ = LutCalibrationFailReason::NONE;
+    lut_settle_time_s_ = 0.0f;
+    lut_electrical_angle_ = 0.0f;
+    lut_sample_index_ = 0;
+    lut_microstep_index_ = 0;
+    id_target_ = 0.0f;
+    lut_start_mech_angle_ = 0.0f;
+    lut_end_mech_angle_ = 0.0f;
+
+    for (uint32_t i = 0; i < kLutSize; i++)
+    {
+        lut_error_fwd_[i] = 0.0f;
+        lut_error_bwd_[i] = 0.0f;
+    }
+
+    state_ = State::LUT_CALIBRATING;
+    return true;
+}
+
+void Axis::stopLutCalibration()
+{
+    motor_.disarm();
+    state_ = State::IDLE;
+}
+
+void Axis::updateLutCalibration(float dt)
+{
+    constexpr float kSettleTimeS = 0.05f;
+    const float pole_pairs = static_cast<float>(g_config.motor_pole_pairs);
+    const float kTotalSweepRad = TWO_PI * pole_pairs;
+    const float kStepRad = kTotalSweepRad / static_cast<float>(kLutSize * kMicroStepsPerSample);
+
+    switch (lut_phase_)
+    {
+    case LutCalibrationPhase::SETTLE:
+    {
+        lut_settle_time_s_ += dt;
+        float smooth = smoothstepRamp_(lut_settle_time_s_, kSettleTimeS);
+        lut_electrical_angle_ = 0.0f;
+        id_target_ = g_config.calibration_test_current * smooth;
+
+        if (lut_settle_time_s_ >= kSettleTimeS)
+        {
+            lut_start_mech_angle_ = encoder_.angle();
+            lut_sample_index_ = 0;
+            lut_microstep_index_ = 0;
+            lut_electrical_angle_ = 0.0f;
+            id_target_ = g_config.calibration_test_current;
+            lut_phase_ = LutCalibrationPhase::SCAN_FWD;
+        }
+        break;
+    }
+
+    case LutCalibrationPhase::SCAN_FWD:
+    {
+        lut_electrical_angle_ += kStepRad;
+        id_target_ = g_config.calibration_test_current;
+        lut_microstep_index_++;
+
+        if (lut_microstep_index_ >= kMicroStepsPerSample)
+        {
+            lut_microstep_index_ = 0;
+            float theta_actual = encoder_.angle() * pole_pairs;
+            float error = normalizeAngle(lut_electrical_angle_ - theta_actual);
+            lut_error_fwd_[lut_sample_index_] = error;
+            lut_sample_index_++;
+
+            if (lut_sample_index_ >= kLutSize)
+            {
+                lut_sample_index_ = 0;
+                lut_phase_ = LutCalibrationPhase::SCAN_REV;
+            }
+        }
+        break;
+    }
+
+    case LutCalibrationPhase::SCAN_REV:
+    {
+        lut_electrical_angle_ -= kStepRad;
+        id_target_ = g_config.calibration_test_current;
+        lut_microstep_index_++;
+
+        if (lut_microstep_index_ >= kMicroStepsPerSample)
+        {
+            lut_microstep_index_ = 0;
+            float theta_actual = encoder_.angle() * pole_pairs;
+            float error = normalizeAngle(lut_electrical_angle_ - theta_actual);
+            lut_error_bwd_[lut_sample_index_] = error;
+            lut_sample_index_++;
+
+            if (lut_sample_index_ >= kLutSize)
+            {
+                lut_end_mech_angle_ = encoder_.angle();
+                id_target_ = 0.0f;
+                lut_phase_ = LutCalibrationPhase::COMPUTE;
+            }
+        }
+        break;
+    }
+
+    case LutCalibrationPhase::COMPUTE:
+    {
+        float error_avg[kLutSize];
+        for (uint32_t i = 0; i < kLutSize; i++)
+        {
+            error_avg[i] = (lut_error_fwd_[i] + lut_error_bwd_[kLutSize - 1 - i]) * 0.5f;
+        }
+
+        constexpr uint32_t kFilterHalfWindow = 2; // 5-point circular moving average
+        float error_filtered[kLutSize];
+        for (uint32_t i = 0; i < kLutSize; i++)
+        {
+            float sum = 0.0f;
+            for (int32_t k = -static_cast<int32_t>(kFilterHalfWindow); k <= static_cast<int32_t>(kFilterHalfWindow); k++)
+            {
+                int32_t idx = (static_cast<int32_t>(i) + k + static_cast<int32_t>(kLutSize)) % static_cast<int32_t>(kLutSize);
+                sum += error_avg[idx];
+            }
+            error_filtered[i] = sum / static_cast<float>(2 * kFilterHalfWindow + 1);
+        }
+
+        float mean_error = 0.0f;
+        for (uint32_t i = 0; i < kLutSize; i++)
+        {
+            mean_error += error_filtered[i];
+        }
+        mean_error /= static_cast<float>(kLutSize);
+
+        for (uint32_t i = 0; i < kLutSize; i++)
+        {
+            g_config.encoder_lut[i] = error_filtered[i] - mean_error;
+        }
+
+        float raw_offset_mech = (lut_start_mech_angle_ + lut_end_mech_angle_) * 0.5f;
+        float offset = normalizeAngle2Pi((raw_offset_mech * pole_pairs) + mean_error);
+
+        g_config.encoder_offset_rad = offset;
+        g_config.encoder_lut_calibrated = true;
+
+        lut_phase_ = LutCalibrationPhase::DONE;
+        break;
+    }
+
+    case LutCalibrationPhase::DONE:
+    case LutCalibrationPhase::FAILED:
+        id_target_ = 0.0f;
+        break;
+    }
+}
+
+float Axis::lutCorrection_(int32_t position_counts) const
+{
+    const uint32_t cpr = g_config.encoder_cpr;
+    uint32_t wrapped = static_cast<uint32_t>(((position_counts % static_cast<int32_t>(cpr)) + static_cast<int32_t>(cpr)) % static_cast<int32_t>(cpr));
+
+    float index_f = (static_cast<float>(wrapped) / static_cast<float>(cpr)) * static_cast<float>(kLutSize);
+    uint32_t i0 = static_cast<uint32_t>(index_f) % kLutSize;
+    uint32_t i1 = (i0 + 1) % kLutSize;
+    float frac = index_f - static_cast<float>(static_cast<uint32_t>(index_f));
+
+    return g_config.encoder_lut[i0] + (g_config.encoder_lut[i1] - g_config.encoder_lut[i0]) * frac;
 }
