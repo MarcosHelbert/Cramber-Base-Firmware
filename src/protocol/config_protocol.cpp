@@ -154,13 +154,6 @@ void ConfigProtocol::handleCalibrate_(const ConfigCommandReport &cmd)
         return;
     }
 
-    // TODO: REMOVE CALTYPE_ENCODER_LUT
-    if (cmd.param_id == PARAM_CALTYPE_ENCODER_LUT)
-    {
-        handleCalibrateEncoderLut_(cmd);
-        return;
-    }
-
     // TODO: implement CALTYPE_ANTICOGGING (and anything else) isn't implemented yet.
     respond_(STATUS_ERR_BUSY, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
 }
@@ -244,7 +237,7 @@ void ConfigProtocol::handleCalibrateEncoder_(const ConfigCommandReport &cmd)
         return;
     }
 
-    respond_(STATUS_OK, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
+    handleCalibrateEncoderLut_(cmd);
 }
 
 void ConfigProtocol::handleCalibrateEncoderLut_(const ConfigCommandReport &cmd)
