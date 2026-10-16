@@ -13,28 +13,11 @@ public:
     enum class State
     {
         IDLE,
-        ALIGNING,
-        LUT_CALIBRATING,
+        CALIBRATING_ENCODER,
         ERROR,
     };
 
-    enum class AlignmentPhase
-    {
-        SETTLE,
-        SCAN_FWD,
-        SCAN_REV,
-        DONE,
-        FAILED,
-    };
-
-    enum class AlignmentFailReason
-    {
-        NONE = 0,
-        ENCODER_DIRECTION_UNCLEAR,
-        CPR_POLE_PAIRS_MISMATCH,
-    };
-
-    enum class LutCalibrationPhase
+    enum class CalibrationPhase
     {
         SETTLE,
         SCAN_FWD,
@@ -44,17 +27,18 @@ public:
         FAILED,
     };
 
-    enum class LutCalibrationFailReason
+    enum class CalibrationFailReason
     {
         NONE = 0,
-        NOT_ALIGNED,
-        ARM_FAILED,
+        ENCODER_DIRECTION_UNCLEAR,
+        CPR_POLE_PAIRS_MISMATCH,
     };
 
 public:
     Axis(Motor &motor, Encoder &encoder);
 
-    bool startAlignment();
+    bool startCalibration();
+    void stopCalibration();
 
     void update(float dt);
 
@@ -62,18 +46,10 @@ public:
     float getIdTarget() const { return id_target_; }
     float getIqTarget() const { return iq_target_; }
 
-    AlignmentPhase getAlignmentPhase() const { return alignment_phase_; }
-    AlignmentFailReason getLastAlignmentFailReason() const { return last_alignment_fail_reason_; }
+    CalibrationPhase getCalibrationPhase() const { return phase_; }
+    CalibrationFailReason getLastCalibrationFailReason() const { return last_fail_reason_; }
 
     int32_t getEncoderPositionCounts() const { return encoder_.positionCounts(); }
-
-    void stopAlignment();
-
-    bool startLutCalibration();
-    void stopLutCalibration();
-    void updateLutCalibration(float dt);
-    LutCalibrationPhase getLutCalibrationPhase() const { return lut_phase_; }
-    LutCalibrationFailReason getLastLutCalibrationFailReason() const { return last_lut_fail_reason_; }
 
     State getState() const { return state_; }
 
@@ -87,25 +63,17 @@ private:
 
     State state_ = State::IDLE;
 
-    AlignmentPhase alignment_phase_ = AlignmentPhase::SETTLE;
-    AlignmentFailReason last_alignment_fail_reason_ = AlignmentFailReason::NONE;
-    float alignment_electrical_angle_ = 0.0f;
+    CalibrationPhase phase_ = CalibrationPhase::SETTLE;
+    CalibrationFailReason last_fail_reason_ = CalibrationFailReason::NONE;
+    float electrical_angle_ = 0.0f;
     float id_target_ = 0.0f;
     float iq_target_ = 0.0f;
-    float alignment_settle_time_s_ = 0.0f;
-    float alignment_scan_distance_ = 0.0f;
-    int32_t alignment_start_counts_ = 0;
-    int64_t alignment_count_sum_ = 0;
-    uint32_t alignment_step_count_ = 0;
+    float settle_time_s_ = 0.0f;
 
     static constexpr uint32_t kLutSize = PersistedConfig::kEncoderLutSize;
     static constexpr uint32_t kMicroStepsPerSample = 40;
 
-    LutCalibrationPhase lut_phase_ = LutCalibrationPhase::SETTLE;
-    LutCalibrationFailReason last_lut_fail_reason_ = LutCalibrationFailReason::NONE;
-
-    float lut_settle_time_s_ = 0.0f;
-    float lut_electrical_angle_ = 0.0f;
+    int32_t scan_start_counts_ = 0;
     uint32_t lut_sample_index_ = 0;
     uint32_t lut_microstep_index_ = 0;
 

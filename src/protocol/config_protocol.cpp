@@ -200,7 +200,13 @@ void ConfigProtocol::handleCalibrateEncoder_(const ConfigCommandReport &cmd)
         return;
     }
 
-    if (!axis_.startAlignment())
+    if (encoder_calibration_pending_)
+    {
+        respond_(STATUS_ERR_BUSY, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
+        return;
+    }
+
+    if (!axis_.startCalibration())
     {
         uint8_t status = STATUS_ERR_CALIBRATION_FAILED;
         switch (motor_.getLastArmFailReason())
@@ -218,74 +224,21 @@ void ConfigProtocol::handleCalibrateEncoder_(const ConfigCommandReport &cmd)
         return;
     }
 
-    constexpr uint32_t kTimeoutMs = 16000;
-    uint32_t waited_ms = 0;
-    Axis::AlignmentPhase phase = axis_.getAlignmentPhase();
-    while (phase != Axis::AlignmentPhase::DONE && phase != Axis::AlignmentPhase::FAILED && waited_ms < kTimeoutMs)
-    {
-        iwdg_reset();
-        delay_ms(10);
-        waited_ms += 10;
-        phase = axis_.getAlignmentPhase();
-    }
-
-    axis_.stopAlignment();
-
-    if (phase != Axis::AlignmentPhase::DONE)
-    {
-        respond_(STATUS_ERR_CALIBRATION_FAILED, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
-        return;
-    }
-
-    handleCalibrateEncoderLut_(cmd);
+    encoder_calibration_pending_ = true;
+    respond_(STATUS_IN_PROGRESS, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
 }
 
-void ConfigProtocol::handleCalibrateEncoderLut_(const ConfigCommandReport &cmd)
+void ConfigProtocol::poll()
 {
-    if (!g_config.encoder_calibrated)
-    {
-        respond_(STATUS_ERR_NOT_CALIBRATED, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
+    if (!encoder_calibration_pending_)
         return;
-    }
 
-    if (!axis_.startLutCalibration())
-    {
-        uint8_t status = STATUS_ERR_CALIBRATION_FAILED;
-        switch (motor_.getLastArmFailReason())
-        {
-        case Motor::ArmFailReason::POWER_OUT_OF_RANGE:
-            status = STATUS_ERR_POWER_FAULT;
-            break;
-        case Motor::ArmFailReason::DRIVER_FAULT:
-            status = STATUS_ERR_DRIVER_FAULT;
-            break;
-        default:
-            break;
-        }
-        respond_(status, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
+    Axis::CalibrationPhase phase = axis_.getCalibrationPhase();
+    if (phase != Axis::CalibrationPhase::DONE && phase != Axis::CalibrationPhase::FAILED)
         return;
-    }
 
-    constexpr uint32_t kTimeoutMs = 300000; // 5 min
-    uint32_t waited_ms = 0;
-    Axis::LutCalibrationPhase phase = axis_.getLutCalibrationPhase();
-    while (phase != Axis::LutCalibrationPhase::DONE && phase != Axis::LutCalibrationPhase::FAILED && waited_ms < kTimeoutMs)
-    {
-        iwdg_reset();
-        delay_ms(10);
-        waited_ms += 10;
-        phase = axis_.getLutCalibrationPhase();
-    }
-
-    axis_.stopLutCalibration();
-
-    if (phase != Axis::LutCalibrationPhase::DONE)
-    {
-        respond_(STATUS_ERR_CALIBRATION_FAILED, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
-        return;
-    }
-
-    respond_(STATUS_OK, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
+    axis_.stopCalibration();
+    encoder_calibration_pending_ = false;
 }
 
 void ConfigProtocol::handleSave_(const ConfigCommandReport &cmd)
@@ -509,11 +462,15 @@ bool ConfigProtocol::readParam_(uint16_t param_id, uint8_t &out_type, uint8_t ou
         return true;
     case PARAM_ALIGNMENT_FAIL_REASON:
         out_type = VALUE_U32;
-        packU32(out_value, static_cast<uint32_t>(axis_.getLastAlignmentFailReason()));
+        packU32(out_value, static_cast<uint32_t>(axis_.getLastCalibrationFailReason()));
         return true;
     case PARAM_ENCODER_POSITION_COUNTS:
         out_type = VALUE_I32;
         packI32(out_value, axis_.getEncoderPositionCounts());
+        return true;
+    case PARAM_ENCODER_CALIBRATION_PHASE:
+        out_type = VALUE_U32;
+        packU32(out_value, static_cast<uint32_t>(axis_.getCalibrationPhase()));
         return true;
 
     default:

@@ -123,6 +123,7 @@ enum ConfigParamId : uint16_t
     PARAM_CALIBRATION_FAIL_REASON = 0xFF06,
     PARAM_ALIGNMENT_FAIL_REASON = 0xFF07,
     PARAM_ENCODER_POSITION_COUNTS = 0xFF08,
+    PARAM_ENCODER_CALIBRATION_PHASE = 0xFF09,
 };
 
 // Raw 16-byte OUT report layout:
@@ -171,6 +172,8 @@ public:
     void hidSet(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize);
     uint16_t hidGet(uint8_t report_id, uint8_t *buffer);
 
+    void poll();
+
 private:
     Motor &motor_;
     FOC &foc_;
@@ -180,13 +183,13 @@ private:
 
     ConfigCommandReport lastCommand_{};
     ConfigResponseReport lastResponse_{};
+    bool encoder_calibration_pending_ = false;
 
     void handleGet_(const ConfigCommandReport &cmd);
     void handleSet_(const ConfigCommandReport &cmd);
     void handleCalibrate_(const ConfigCommandReport &cmd);
     void handleCalibrateMotor_(const ConfigCommandReport &cmd);
     void handleCalibrateEncoder_(const ConfigCommandReport &cmd);
-    void handleCalibrateEncoderLut_(const ConfigCommandReport &cmd);
     void handleSave_(const ConfigCommandReport &cmd);
     void handleFactoryReset_(const ConfigCommandReport &cmd);
 

@@ -68,6 +68,7 @@ static void usb_task(void *arg)
     {
         iwdg_reset();
         usb.update();
+        config_protocol.poll();
 
         vTaskDelayUntil(&lastWakeTime, period);
     }
@@ -152,8 +153,7 @@ extern "C" void tim1_cc_isr(void)
     }
 
     Motor::MotorState motor_state = motor.getState();
-    Axis::State axis_state = axis.getState();
-    bool driving_open_loop = axis_state == Axis::State::ALIGNING || axis_state == Axis::State::LUT_CALIBRATING;
+    bool driving_open_loop = axis.getState() == Axis::State::CALIBRATING_ENCODER;
     bool calibrated = g_config.motor_calibrated && g_config.encoder_calibrated;
 
     if (motor_state != Motor::MotorState::ARMED || (!driving_open_loop && !calibrated))
