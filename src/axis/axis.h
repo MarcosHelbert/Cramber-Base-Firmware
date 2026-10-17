@@ -4,6 +4,8 @@
 #include <cstdint>
 
 #include <encoder/encoder.h>
+#include <ffb/bumpstop.h>
+#include <ffb/ffb_manager.h>
 #include <motor/motor.h>
 #include <persistence/config_store.h>
 
@@ -14,7 +16,17 @@ public:
     {
         IDLE,
         CALIBRATING_ENCODER,
+        HOMING,
+        RUNNING,
         ERROR,
+    };
+
+    enum class HomingFailReason
+    {
+        NONE = 0,
+        NOT_READY,
+        ARM_FAILED,
+        INDEX_NOT_FOUND,
     };
 
     enum class CalibrationPhase
@@ -35,10 +47,25 @@ public:
     };
 
 public:
-    Axis(Motor &motor, Encoder &encoder);
+    Axis(Motor &motor, Encoder &encoder, FFBManager &ffb_manager);
+
+    void initBumpstop() { bumpstop_.updateLimits(); }
 
     bool startCalibration();
     void stopCalibration();
+
+    bool startHoming();
+    void stopHoming();
+
+    HomingFailReason getLastHomingFailReason() const { return last_homing_fail_reason_; }
+    bool isHomingDone() const { return homing_done_; }
+
+    void setRunning(bool running)
+    {
+        if (running)
+            iq_prev_ = 0.0f;
+        state_ = running ? State::RUNNING : State::IDLE;
+    }
 
     void update(float dt);
 
@@ -60,8 +87,11 @@ private:
 private:
     Motor &motor_;
     Encoder &encoder_;
+    FFBManager &ffb_manager_;
+    BumpStop bumpstop_;
 
     State state_ = State::IDLE;
+    float iq_prev_ = 0.0f;
 
     CalibrationPhase phase_ = CalibrationPhase::SETTLE;
     CalibrationFailReason last_fail_reason_ = CalibrationFailReason::NONE;
@@ -82,6 +112,10 @@ private:
 
     float lut_start_mech_angle_ = 0.0f;
     float lut_end_mech_angle_ = 0.0f;
+
+    HomingFailReason last_homing_fail_reason_ = HomingFailReason::NONE;
+    bool homing_done_ = false;
+    int32_t homing_start_counts_ = 0;
 };
 
 #endif // AXIS_H

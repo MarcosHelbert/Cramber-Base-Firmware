@@ -21,6 +21,8 @@ public:
     void start();
     void update();
 
+    void setAxis(float position_rad, float steering_range_deg);
+
 private:
     JoystickReport_Data joystickReport_{};
 };

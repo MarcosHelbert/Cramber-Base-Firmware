@@ -1,10 +1,13 @@
 #include "axis.h"
 
+#include <algorithm>
+
 #include <utils.h>
 #include <FastMath.h>
+#include <system/timer.h>
 
-Axis::Axis(Motor &motor, Encoder &encoder)
-    : motor_(motor), encoder_(encoder) {}
+Axis::Axis(Motor &motor, Encoder &encoder, FFBManager &ffb_manager)
+    : motor_(motor), encoder_(encoder), ffb_manager_(ffb_manager) {}
 
 float Axis::smoothstepRamp_(float elapsed_s, float duration_s) const
 {
@@ -52,8 +55,90 @@ void Axis::stopCalibration()
     state_ = State::IDLE;
 }
 
+bool Axis::startHoming()
+{
+    if (!g_config.motor_calibrated || !g_config.encoder_calibrated)
+    {
+        last_homing_fail_reason_ = HomingFailReason::NOT_READY;
+        return false;
+    }
+
+    if (!motor_.arm())
+    {
+        last_homing_fail_reason_ = HomingFailReason::ARM_FAILED;
+        return false;
+    }
+
+    last_homing_fail_reason_ = HomingFailReason::NONE;
+    homing_done_ = false;
+    id_target_ = 0.0f;
+    iq_target_ = 0.0f;
+    homing_start_counts_ = encoder_.positionCounts();
+
+    encoder_.setIdxSubscribe(true);
+
+    state_ = State::HOMING;
+    return true;
+}
+
+void Axis::stopHoming()
+{
+    encoder_.setIdxSubscribe(false);
+    motor_.disarm();
+    iq_target_ = 0.0f;
+    state_ = State::IDLE;
+}
+
 void Axis::update(float dt)
 {
+    if (state_ == State::RUNNING)
+    {
+        float max_step = g_config.ffb_slew_rate_a_per_s * dt;
+
+        float position_rad = encoder_.angle();
+        float velocity = encoder_.velocity();
+        float acceleration = encoder_.acceleration();
+
+        float torque = ffb_manager_.getTorque(position_rad, velocity, acceleration, millis());
+        torque += bumpstop_.calculate(position_rad, velocity);
+
+        torque = std::clamp(torque, -g_config.max_current, g_config.max_current);
+
+        float delta = torque - iq_prev_;
+        delta = std::clamp(delta, -max_step, max_step);
+        iq_prev_ += delta;
+
+        id_target_ = 0.0f;
+        iq_target_ = iq_prev_;
+        return;
+    }
+
+    if (state_ == State::HOMING)
+    {
+        constexpr float kHomingCurrent = 0.5f;
+        constexpr int32_t kDirectionDeadband = 8;
+
+        if (encoder_.isIndexed())
+        {
+            iq_target_ = 0.0f;
+            encoder_.setIdxSubscribe(false);
+            homing_done_ = true;
+            return;
+        }
+
+        int32_t delta = encoder_.positionCounts() - homing_start_counts_;
+        if (delta > static_cast<int32_t>(g_config.encoder_cpr) + kDirectionDeadband)
+        {
+            iq_target_ = 0.0f;
+            encoder_.setIdxSubscribe(false);
+            last_homing_fail_reason_ = HomingFailReason::INDEX_NOT_FOUND;
+            return;
+        }
+
+        iq_target_ = kHomingCurrent;
+        return;
+    }
+
     constexpr float kSettleTimeS = 0.05f;
     const float pole_pairs = static_cast<float>(g_config.motor_pole_pairs);
     constexpr float kCalibrationRange = 0.05f;

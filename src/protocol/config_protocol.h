@@ -5,6 +5,7 @@
 
 #include <axis/axis.h>
 #include <driver/drv8301.h>
+#include <ffb/ffb_manager.h>
 #include <motor/foc.h>
 #include <motor/motor.h>
 #include <persistence/config_store.h>
@@ -24,6 +25,7 @@ enum ConfigCommand : uint8_t
     CMD_GET_STATUS = 0x05,
     CMD_FACTORY_RESET = 0x06,
     CMD_REBOOT = 0x07,
+    CMD_CLEAR_FAULT = 0x08,
 };
 
 enum ConfigStatus : uint8_t
@@ -109,9 +111,21 @@ enum ConfigParamId : uint16_t
     PARAM_BRAKE_RESISTOR_POWER_RATING_W = 0x0B02,
     PARAM_BRAKE_RESISTOR_MAX_REGEN_CURRENT = 0x0B03,
 
+    // 0x0C00-0x0CFF: force feedback
+    PARAM_FFB_ENABLED_ON_BOOT = 0x0C00,
+    PARAM_FFB_ACTIVE = 0x0C01,
+    PARAM_FFB_SLEW_RATE_A_PER_S = 0x0C02,
+
+    // 0x0D00-0x0DFF: bumpstop (virtual end-of-travel wall)
+    PARAM_BUMPSTOP_ENABLED = 0x0D00,
+    PARAM_BUMPSTOP_RANGE_DEG = 0x0D01,
+    PARAM_BUMPSTOP_STIFFNESS = 0x0D02,
+    PARAM_BUMPSTOP_DAMPING = 0x0D03,
+
     // 0xFE00-0xFEFF: calibration type selectors (value of CMD_CALIBRATE)
     PARAM_CALTYPE_MOTOR = 0xFE00,
     PARAM_CALTYPE_ENCODER = 0xFE01,
+    PARAM_CALTYPE_HOME = 0xFE02,
 
     // 0xFF00-0xFFFF: diagnostics (read-only)
     PARAM_DRV_STATUS1 = 0xFF00,
@@ -124,6 +138,8 @@ enum ConfigParamId : uint16_t
     PARAM_ALIGNMENT_FAIL_REASON = 0xFF07,
     PARAM_ENCODER_POSITION_COUNTS = 0xFF08,
     PARAM_ENCODER_CALIBRATION_PHASE = 0xFF09,
+    PARAM_HOMING_FAIL_REASON = 0xFF0A,
+    PARAM_HOMING_IN_PROGRESS = 0xFF0B,
 };
 
 // Raw 16-byte OUT report layout:
@@ -168,7 +184,7 @@ static_assert(sizeof(ConfigResponseReport) == CONFIG_REPORT_SIZE, "ConfigRespons
 class ConfigProtocol
 {
 public:
-    ConfigProtocol(Motor &motor, FOC &foc, DRV8301 &drv8301, Axis &axis, ConfigStore &config_store);
+    ConfigProtocol(Motor &motor, FOC &foc, DRV8301 &drv8301, Axis &axis, ConfigStore &config_store, FFBManager &ffb_manager);
     void hidSet(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize);
     uint16_t hidGet(uint8_t report_id, uint8_t *buffer);
 
@@ -180,16 +196,19 @@ private:
     DRV8301 &drv8301_;
     Axis &axis_;
     ConfigStore &config_store_;
+    FFBManager &ffb_manager_;
 
     ConfigCommandReport lastCommand_{};
     ConfigResponseReport lastResponse_{};
     bool encoder_calibration_pending_ = false;
+    bool homing_pending_ = false;
 
     void handleGet_(const ConfigCommandReport &cmd);
     void handleSet_(const ConfigCommandReport &cmd);
     void handleCalibrate_(const ConfigCommandReport &cmd);
     void handleCalibrateMotor_(const ConfigCommandReport &cmd);
     void handleCalibrateEncoder_(const ConfigCommandReport &cmd);
+    void handleHome_(const ConfigCommandReport &cmd);
     void handleSave_(const ConfigCommandReport &cmd);
     void handleFactoryReset_(const ConfigCommandReport &cmd);
 

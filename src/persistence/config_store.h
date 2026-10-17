@@ -14,7 +14,7 @@ struct PersistedConfig
     float vbus_max_voltage = 28.0f;   // Overvoltage threshold (V)
 
     // --- PWM ---
-    uint32_t pwm_freq_hz = 22000;   // Switching frequency (Hz)
+    uint32_t pwm_freq_hz = 21000;   // Switching frequency (Hz)
     uint32_t pwm_deadtime_ns = 200; // Deadtime between high/low side (ns)
 
     // --- Current sensing ---
@@ -46,7 +46,11 @@ struct PersistedConfig
 
     // --- Homing ---
     bool use_index_z = false;  // Use the Z/index pulse for absolute homing
-    bool home_on_boot = false; // Run homing automatically at boot (requires motor+encoder calibrated)
+    bool home_on_boot = false; // Run homing automatically at boot
+
+    // --- Force feedback ---
+    bool ffb_enabled_on_boot = false;    // Arm the motor and start FFB automatically at boot
+    float ffb_slew_rate_a_per_s = 50.0f; // Max rate of change of the FFB current target (A/s).
 
     // --- Encoder LUT ---
     static constexpr uint32_t kEncoderLutSize = 128;
@@ -60,6 +64,12 @@ struct PersistedConfig
     float max_velocity_rad_s = 6.0f;
     float max_acceleration_rad_s2 = 80.0f;
     float steering_range_deg = 900.0f;
+
+    // --- Bumpstop ---
+    bool bumpstop_enabled = true;     // Apply the bumpstop torque near +-steering_range_deg/2
+    float bumpstop_range_deg = 10.0f; // Angular width of the wall transition zone, each side (deg)
+    float bumpstop_stiffness = 1.5f;  // Spring torque scale at full penetration (A)
+    float bumpstop_damping = 0.3f;    // Velocity damping scale within the wall (A per rad/s)
 
     // --- Brake resistor ---
     bool brake_resistor_enabled = false;           // Use the brake resistor at all

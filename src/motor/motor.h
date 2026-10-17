@@ -41,6 +41,8 @@ public:
     bool arm();
     void disarm();
 
+    void clearFault();
+
     void setOutput(float va, float vb, float vc);
 
     bool calibrate();

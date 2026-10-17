@@ -48,8 +48,8 @@ namespace
     bool unpackBool(const uint8_t v[4]) { return v[0] != 0; }
 }
 
-ConfigProtocol::ConfigProtocol(Motor &motor, FOC &foc, DRV8301 &drv8301, Axis &axis, ConfigStore &config_store)
-    : motor_(motor), foc_(foc), drv8301_(drv8301), axis_(axis), config_store_(config_store) {}
+ConfigProtocol::ConfigProtocol(Motor &motor, FOC &foc, DRV8301 &drv8301, Axis &axis, ConfigStore &config_store, FFBManager &ffb_manager)
+    : motor_(motor), foc_(foc), drv8301_(drv8301), axis_(axis), config_store_(config_store), ffb_manager_(ffb_manager) {}
 
 void ConfigProtocol::hidSet(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize)
 {
@@ -88,6 +88,11 @@ void ConfigProtocol::hidSet(uint8_t report_id, uint8_t const *buffer, uint16_t b
 
     case CMD_FACTORY_RESET:
         handleFactoryReset_(cmd);
+        break;
+
+    case CMD_CLEAR_FAULT:
+        motor_.clearFault();
+        respond_(STATUS_OK, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
         break;
 
     case CMD_GET_STATUS:
@@ -151,6 +156,12 @@ void ConfigProtocol::handleCalibrate_(const ConfigCommandReport &cmd)
     if (cmd.param_id == PARAM_CALTYPE_ENCODER)
     {
         handleCalibrateEncoder_(cmd);
+        return;
+    }
+
+    if (cmd.param_id == PARAM_CALTYPE_HOME)
+    {
+        handleHome_(cmd);
         return;
     }
 
@@ -228,17 +239,66 @@ void ConfigProtocol::handleCalibrateEncoder_(const ConfigCommandReport &cmd)
     respond_(STATUS_IN_PROGRESS, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
 }
 
+void ConfigProtocol::handleHome_(const ConfigCommandReport &cmd)
+{
+    if (homing_pending_)
+    {
+        respond_(STATUS_ERR_BUSY, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
+        return;
+    }
+
+    if (!axis_.startHoming())
+    {
+        uint8_t status = STATUS_ERR_CALIBRATION_FAILED;
+        switch (axis_.getLastHomingFailReason())
+        {
+        case Axis::HomingFailReason::NOT_READY:
+            status = STATUS_ERR_NOT_CALIBRATED;
+            break;
+        case Axis::HomingFailReason::ARM_FAILED:
+            switch (motor_.getLastArmFailReason())
+            {
+            case Motor::ArmFailReason::POWER_OUT_OF_RANGE:
+                status = STATUS_ERR_POWER_FAULT;
+                break;
+            case Motor::ArmFailReason::DRIVER_FAULT:
+                status = STATUS_ERR_DRIVER_FAULT;
+                break;
+            default:
+                break;
+            }
+            break;
+        default:
+            break;
+        }
+        respond_(status, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
+        return;
+    }
+
+    homing_pending_ = true;
+    respond_(STATUS_IN_PROGRESS, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
+}
+
 void ConfigProtocol::poll()
 {
-    if (!encoder_calibration_pending_)
-        return;
+    if (encoder_calibration_pending_)
+    {
+        Axis::CalibrationPhase phase = axis_.getCalibrationPhase();
+        if (phase == Axis::CalibrationPhase::DONE || phase == Axis::CalibrationPhase::FAILED)
+        {
+            axis_.stopCalibration();
+            encoder_calibration_pending_ = false;
+        }
+    }
 
-    Axis::CalibrationPhase phase = axis_.getCalibrationPhase();
-    if (phase != Axis::CalibrationPhase::DONE && phase != Axis::CalibrationPhase::FAILED)
-        return;
-
-    axis_.stopCalibration();
-    encoder_calibration_pending_ = false;
+    if (homing_pending_)
+    {
+        if (axis_.isHomingDone() || axis_.getLastHomingFailReason() != Axis::HomingFailReason::NONE)
+        {
+            axis_.stopHoming();
+            homing_pending_ = false;
+        }
+    }
 }
 
 void ConfigProtocol::handleSave_(const ConfigCommandReport &cmd)
@@ -432,6 +492,36 @@ bool ConfigProtocol::readParam_(uint16_t param_id, uint8_t &out_type, uint8_t ou
         packF32(out_value, c.brake_resistor_max_regen_current);
         return true;
 
+    case PARAM_FFB_ENABLED_ON_BOOT:
+        out_type = VALUE_BOOL;
+        packBool(out_value, c.ffb_enabled_on_boot);
+        return true;
+    case PARAM_FFB_ACTIVE:
+        out_type = VALUE_BOOL;
+        packBool(out_value, motor_.getState() == Motor::MotorState::ARMED && ffb_manager_.isFFBActive());
+        return true;
+    case PARAM_FFB_SLEW_RATE_A_PER_S:
+        out_type = VALUE_F32;
+        packF32(out_value, c.ffb_slew_rate_a_per_s);
+        return true;
+
+    case PARAM_BUMPSTOP_ENABLED:
+        out_type = VALUE_BOOL;
+        packBool(out_value, c.bumpstop_enabled);
+        return true;
+    case PARAM_BUMPSTOP_RANGE_DEG:
+        out_type = VALUE_F32;
+        packF32(out_value, c.bumpstop_range_deg);
+        return true;
+    case PARAM_BUMPSTOP_STIFFNESS:
+        out_type = VALUE_F32;
+        packF32(out_value, c.bumpstop_stiffness);
+        return true;
+    case PARAM_BUMPSTOP_DAMPING:
+        out_type = VALUE_F32;
+        packF32(out_value, c.bumpstop_damping);
+        return true;
+
     case PARAM_DRV_STATUS1:
         out_type = VALUE_U32;
         packU32(out_value, drv8301_.getStatus1());
@@ -471,6 +561,14 @@ bool ConfigProtocol::readParam_(uint16_t param_id, uint8_t &out_type, uint8_t ou
     case PARAM_ENCODER_CALIBRATION_PHASE:
         out_type = VALUE_U32;
         packU32(out_value, static_cast<uint32_t>(axis_.getCalibrationPhase()));
+        return true;
+    case PARAM_HOMING_FAIL_REASON:
+        out_type = VALUE_U32;
+        packU32(out_value, static_cast<uint32_t>(axis_.getLastHomingFailReason()));
+        return true;
+    case PARAM_HOMING_IN_PROGRESS:
+        out_type = VALUE_BOOL;
+        packBool(out_value, axis_.getState() == Axis::State::HOMING);
         return true;
 
     default:
@@ -652,6 +750,7 @@ uint8_t ConfigProtocol::writeParam_(uint16_t param_id, uint8_t type, const uint8
         if (type != VALUE_F32)
             return STATUS_ERR_UNKNOWN_PARAM;
         c.steering_range_deg = unpackF32(value);
+        axis_.initBumpstop();
         return STATUS_OK;
 
     case PARAM_BRAKE_RESISTOR_ENABLED:
@@ -673,6 +772,81 @@ uint8_t ConfigProtocol::writeParam_(uint16_t param_id, uint8_t type, const uint8
         if (type != VALUE_F32)
             return STATUS_ERR_UNKNOWN_PARAM;
         c.brake_resistor_max_regen_current = unpackF32(value);
+        return STATUS_OK;
+
+    case PARAM_FFB_ENABLED_ON_BOOT:
+    {
+        if (type != VALUE_BOOL)
+            return STATUS_ERR_UNKNOWN_PARAM;
+        bool requested = unpackBool(value);
+        if (requested && !(c.motor_calibrated && c.encoder_calibrated))
+            return STATUS_ERR_NOT_CALIBRATED;
+        c.ffb_enabled_on_boot = requested;
+        return STATUS_OK;
+    }
+    case PARAM_FFB_ACTIVE:
+    {
+        if (type != VALUE_BOOL)
+            return STATUS_ERR_UNKNOWN_PARAM;
+        bool requested = unpackBool(value);
+
+        if (!requested)
+        {
+            ffb_manager_.stopFFB();
+            motor_.disarm();
+            axis_.setRunning(false);
+            return STATUS_OK;
+        }
+
+        if (!(c.motor_calibrated && c.encoder_calibrated))
+            return STATUS_ERR_NOT_CALIBRATED;
+
+        if (!motor_.arm())
+        {
+            switch (motor_.getLastArmFailReason())
+            {
+            case Motor::ArmFailReason::POWER_OUT_OF_RANGE:
+                return STATUS_ERR_POWER_FAULT;
+            case Motor::ArmFailReason::DRIVER_FAULT:
+                return STATUS_ERR_DRIVER_FAULT;
+            default:
+                return STATUS_ERR_CALIBRATION_FAILED;
+            }
+        }
+
+        axis_.setRunning(true);
+        ffb_manager_.startFFB();
+        return STATUS_OK;
+    }
+    case PARAM_FFB_SLEW_RATE_A_PER_S:
+        if (type != VALUE_F32)
+            return STATUS_ERR_UNKNOWN_PARAM;
+        c.ffb_slew_rate_a_per_s = unpackF32(value);
+        return STATUS_OK;
+
+    case PARAM_BUMPSTOP_ENABLED:
+        if (type != VALUE_BOOL)
+            return STATUS_ERR_UNKNOWN_PARAM;
+        c.bumpstop_enabled = unpackBool(value);
+        axis_.initBumpstop();
+        return STATUS_OK;
+    case PARAM_BUMPSTOP_RANGE_DEG:
+        if (type != VALUE_F32)
+            return STATUS_ERR_UNKNOWN_PARAM;
+        c.bumpstop_range_deg = unpackF32(value);
+        axis_.initBumpstop();
+        return STATUS_OK;
+    case PARAM_BUMPSTOP_STIFFNESS:
+        if (type != VALUE_F32)
+            return STATUS_ERR_UNKNOWN_PARAM;
+        c.bumpstop_stiffness = unpackF32(value);
+        axis_.initBumpstop();
+        return STATUS_OK;
+    case PARAM_BUMPSTOP_DAMPING:
+        if (type != VALUE_F32)
+            return STATUS_ERR_UNKNOWN_PARAM;
+        c.bumpstop_damping = unpackF32(value);
+        axis_.initBumpstop();
         return STATUS_OK;
     }
 }

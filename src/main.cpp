@@ -42,9 +42,9 @@ PowerMonitor power_monitor = PowerMonitor(g_config);
 
 FOC foc = FOC(g_config, g_config.pwm_freq_hz);
 Motor motor = Motor(g_config, power_monitor, current_sensor, drv8301);
-Axis axis = Axis(motor, encoder);
+Axis axis = Axis(motor, encoder, ffb_manager);
 
-ConfigProtocol config_protocol = ConfigProtocol(motor, foc, drv8301, axis, config_store);
+ConfigProtocol config_protocol = ConfigProtocol(motor, foc, drv8301, axis, config_store, ffb_manager);
 
 USB usb;
 
@@ -67,6 +67,10 @@ static void usb_task(void *arg)
     while (1)
     {
         iwdg_reset();
+        if (axis.getState() == Axis::State::RUNNING)
+        {
+            usb.setAxis(encoder.angle(), g_config.steering_range_deg);
+        }
         usb.update();
         config_protocol.poll();
 
@@ -77,6 +81,35 @@ static void usb_task(void *arg)
 static void axis_task(void *arg)
 {
     (void)arg;
+    if (g_config.home_on_boot)
+    {
+        if (axis.startHoming())
+        {
+            TickType_t lastWakeTime = xTaskGetTickCount();
+            const TickType_t period = pdMS_TO_TICKS(1); // 1 kHz
+            uint32_t waited_ms = 0;
+            constexpr uint32_t kHomingTimeoutMs = 30000;
+
+            while (axis.getState() == Axis::State::HOMING && waited_ms < kHomingTimeoutMs)
+            {
+                iwdg_reset();
+                axis.update(1.0f / 1000.0f);
+                vTaskDelayUntil(&lastWakeTime, period);
+                waited_ms += 1;
+            }
+
+            axis.stopHoming();
+        }
+    }
+
+    if (g_config.ffb_enabled_on_boot && g_config.motor_calibrated && g_config.encoder_calibrated)
+    {
+        if (motor.arm())
+        {
+            axis.setRunning(true);
+            ffb_manager.startFFB();
+        }
+    }
 
     TickType_t lastWakeTime = xTaskGetTickCount();
     const TickType_t period = pdMS_TO_TICKS(1); // 1 kHz
@@ -115,6 +148,7 @@ int main()
     dwt_init();
     watchdog_init_();
     config_store.load();
+    axis.initBumpstop();
     adc.init();
     current_sensor.init();
     power_monitor.init();

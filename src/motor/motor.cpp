@@ -96,6 +96,15 @@ void Motor::init()
 
     timer_enable_break_main_output(TIM1);
     timer_enable_counter(TIM1);
+
+    // Force a DRV8301 EN_GATE reset pulse on every boot (including after
+    // CMD_REBOOT), not just whenever something happens to call arm() next.
+    // drv8301.init() only sets up GPIO/SPI and leaves EN_GATE low; a reboot
+    // resets the MCU's own state but not the DRV8301 itself (PVDD1 power
+    // stays up across an MCU-only reset), so any fault it had latched
+    // internally would otherwise persist silently until something armed the
+    // motor and happened to notice.
+    clearFault();
 }
 
 void Motor::setOutput(float va, float vb, float vc)
@@ -147,6 +156,29 @@ void Motor::disarm()
     driver_.disable();
     current_.reset();
     cdcLog("[MOTOR] disarm: driver disabled\r\n");
+}
+
+void Motor::clearFault()
+{
+    setDuty(0.5f, 0.5f, 0.5f);
+
+    // disable() alone just holds EN_GATE low and leaves it there -- it
+    // never toggles back up, so the DRV8301 never actually re-powers its
+    // gate driver/charge pump and latched faults (GVDD_OV in particular)
+    // never clear. enable() does the full low->high reset pulse the
+    // datasheet calls for (100us low, then 20ms for the device to come back
+    // up) and reads back CONTROL_1/CONTROL_2 plus hasFault() to confirm the
+    // reset actually took.
+    bool recovered = driver_.enable();
+
+    // Immediately disable again -- clearFault() is meant to reset the
+    // fault latch and return to DISARMED, not leave the motor energized.
+    driver_.disable();
+    current_.reset();
+
+    state_ = MotorState::DISARMED;
+    last_arm_fail_reason_ = ArmFailReason::NONE;
+    cdcLog("[MOTOR] clearFault: EN_GATE reset pulse sent, recovered=%d, state=DISARMED\r\n", recovered);
 }
 
 bool Motor::calibrate()

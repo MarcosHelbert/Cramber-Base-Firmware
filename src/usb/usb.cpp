@@ -8,8 +8,23 @@
 #include <tusb.h>
 
 #include <debug.h>
+#include <utils.h>
 
 USB::USB() {}
+
+void USB::setAxis(float position_rad, float steering_range_deg)
+{
+    if (steering_range_deg <= 0.0f)
+    {
+        joystickReport_.x_axis = 0;
+        return;
+    }
+
+    float half_range_rad = angleToRadians(steering_range_deg * 0.5f);
+    float normalized = position_rad / half_range_rad; // -1..1 across the full lock-to-lock range
+
+    joystickReport_.x_axis = float_to_i16(normalized);
+}
 
 void USB::init()
 {
