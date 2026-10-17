@@ -100,6 +100,50 @@ void Axis::stopHoming()
     state_ = State::IDLE;
 }
 
+bool Axis::startAnticoggingCalibration()
+{
+    if (!g_config.motor_calibrated || !g_config.encoder_calibrated)
+    {
+        last_anticogging_fail_reason_ = AnticoggingFailReason::NOT_READY;
+        return false;
+    }
+
+    if (!motor_.arm())
+    {
+        last_anticogging_fail_reason_ = AnticoggingFailReason::ARM_FAILED;
+        return false;
+    }
+
+    last_anticogging_fail_reason_ = AnticoggingFailReason::NONE;
+    anticogging_phase_ = AnticoggingPhase::SETTLE;
+    anticogging_settle_time_s_ = 0.0f;
+    anticogging_velocity_integral_ = 0.0f;
+    anticogging_sample_index_ = 0;
+    id_target_ = 0.0f;
+    iq_target_ = 0.0f;
+
+    for (uint32_t i = 0; i < kLutSize; i++)
+    {
+        anticogging_iq_sum_[i] = 0.0f;
+        anticogging_iq_count_[i] = 0;
+    }
+
+    state_ = State::CALIBRATING_ANTICOGGING;
+    return true;
+}
+
+void Axis::stopAnticoggingCalibration()
+{
+    if (anticogging_phase_ == AnticoggingPhase::DONE)
+    {
+        g_config.anticogging_calibrated = true;
+    }
+
+    motor_.disarm();
+    iq_target_ = 0.0f;
+    state_ = State::IDLE;
+}
+
 void Axis::update(float dt)
 {
     if (state_ == State::RUNNING)
@@ -113,6 +157,11 @@ void Axis::update(float dt)
         float torque = ffb_manager_.getTorque(position_rad, velocity, acceleration, millis());
         torque += bumpstop_.calculate(position_rad, velocity);
 
+        if (g_config.anticogging_enabled && g_config.anticogging_calibrated)
+        {
+            torque += anticoggingCorrection_(encoder_.positionCounts());
+        }
+
         torque = std::clamp(torque, -g_config.max_current, g_config.max_current);
 
         float delta = torque - iq_prev_;
@@ -121,6 +170,102 @@ void Axis::update(float dt)
 
         id_target_ = 0.0f;
         iq_target_ = iq_prev_;
+        return;
+    }
+
+    if (state_ == State::CALIBRATING_ANTICOGGING)
+    {
+        constexpr float kVelKp = 0.3f;
+        constexpr float kVelKi = 0.8f;
+        constexpr float kSettleTimeoutS = 5.0f;
+        constexpr float kVelocityToleranceRadS = 0.3f;
+
+        const float target_velocity = g_config.anticogging_scan_velocity_rad_s;
+        float velocity = encoder_.velocity();
+        float vel_error = target_velocity - velocity;
+
+        anticogging_velocity_integral_ += kVelKi * vel_error * dt;
+        anticogging_velocity_integral_ = std::clamp(anticogging_velocity_integral_, -g_config.max_current, g_config.max_current);
+
+        float iq = kVelKp * vel_error + anticogging_velocity_integral_;
+        iq = std::clamp(iq, -g_config.max_current, g_config.max_current);
+
+        id_target_ = 0.0f;
+        iq_target_ = iq;
+
+        if (anticogging_phase_ == AnticoggingPhase::SETTLE)
+        {
+            anticogging_settle_time_s_ += dt;
+
+            if (std::abs(vel_error) <= kVelocityToleranceRadS)
+            {
+                anticogging_start_counts_ = encoder_.positionCounts();
+                anticogging_sample_index_ = 0;
+                anticogging_phase_ = AnticoggingPhase::SCAN;
+                return;
+            }
+
+            if (anticogging_settle_time_s_ >= kSettleTimeoutS)
+            {
+                iq_target_ = 0.0f;
+                anticogging_phase_ = AnticoggingPhase::FAILED;
+                last_anticogging_fail_reason_ = AnticoggingFailReason::VELOCITY_NOT_REACHED;
+                return;
+            }
+            return;
+        }
+
+        if (anticogging_phase_ == AnticoggingPhase::SCAN)
+        {
+            int32_t delta = encoder_.positionCounts() - anticogging_start_counts_;
+            float fraction = static_cast<float>(delta) / static_cast<float>(g_config.encoder_cpr);
+            fraction = std::clamp(fraction, 0.0f, 1.0f);
+
+            uint32_t idx = static_cast<uint32_t>(fraction * static_cast<float>(kLutSize));
+            if (idx >= kLutSize)
+                idx = kLutSize - 1;
+
+            anticogging_iq_sum_[idx] += iq;
+            anticogging_iq_count_[idx]++;
+
+            if (static_cast<uint32_t>(delta) >= g_config.encoder_cpr)
+            {
+                iq_target_ = 0.0f;
+                anticogging_phase_ = AnticoggingPhase::COMPUTE;
+            }
+            return;
+        }
+
+        if (anticogging_phase_ == AnticoggingPhase::COMPUTE)
+        {
+            iq_target_ = 0.0f;
+
+            float averaged[kLutSize];
+            for (uint32_t i = 0; i < kLutSize; i++)
+            {
+                averaged[i] = (anticogging_iq_count_[i] > 0)
+                                  ? (anticogging_iq_sum_[i] / static_cast<float>(anticogging_iq_count_[i]))
+                                  : 0.0f;
+            }
+
+            float mean_iq = 0.0f;
+            for (uint32_t i = 0; i < kLutSize; i++)
+            {
+                mean_iq += averaged[i];
+            }
+            mean_iq /= static_cast<float>(kLutSize);
+
+            for (uint32_t i = 0; i < kLutSize; i++)
+            {
+                g_config.anticogging_map[i] = -(averaged[i] - mean_iq);
+            }
+
+            anticogging_phase_ = AnticoggingPhase::DONE;
+            return;
+        }
+
+        // DONE/FAILED
+        iq_target_ = 0.0f;
         return;
     }
 
@@ -345,4 +490,17 @@ float Axis::lutCorrection_(int32_t position_counts) const
     float frac = index_f - static_cast<float>(static_cast<uint32_t>(index_f));
 
     return g_config.encoder_lut[i0] + (g_config.encoder_lut[i1] - g_config.encoder_lut[i0]) * frac;
+}
+
+float Axis::anticoggingCorrection_(int32_t position_counts) const
+{
+    const uint32_t cpr = g_config.encoder_cpr;
+    uint32_t wrapped = static_cast<uint32_t>(((position_counts % static_cast<int32_t>(cpr)) + static_cast<int32_t>(cpr)) % static_cast<int32_t>(cpr));
+
+    float index_f = (static_cast<float>(wrapped) / static_cast<float>(cpr)) * static_cast<float>(kLutSize);
+    uint32_t i0 = static_cast<uint32_t>(index_f) % kLutSize;
+    uint32_t i1 = (i0 + 1) % kLutSize;
+    float frac = index_f - static_cast<float>(static_cast<uint32_t>(index_f));
+
+    return g_config.anticogging_map[i0] + (g_config.anticogging_map[i1] - g_config.anticogging_map[i0]) * frac;
 }

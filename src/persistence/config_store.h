@@ -58,7 +58,10 @@ struct PersistedConfig
     bool encoder_lut_calibrated = false; // True once the LUT scan has completed successfully
 
     // --- Anticogging ---
-    bool anticogging_enabled = false; // Apply the anticogging compensation map (map itself: TODO)
+    bool anticogging_enabled = true;              // Apply the anticogging compensation map
+    float anticogging_map[kEncoderLutSize] = {};  // Compensating torque (A) to add at each of 128 positions around one mechanical revolution
+    bool anticogging_calibrated = false;          // True once the anticogging scan has completed successfully
+    float anticogging_scan_velocity_rad_s = 2.0f; // Target angular velocity held during the anticogging calibration scan (rad/s)
 
     // --- Motion limits ---
     float max_velocity_rad_s = 6.0f;

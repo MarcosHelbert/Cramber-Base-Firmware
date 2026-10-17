@@ -99,6 +99,8 @@ enum ConfigParamId : uint16_t
 
     // 0x0900-0x09FF: anticogging
     PARAM_ANTICOGGING_ENABLED = 0x0900,
+    PARAM_ANTICOGGING_CALIBRATED = 0x0901,
+    PARAM_ANTICOGGING_SCAN_VELOCITY_RAD_S = 0x0902,
 
     // 0x0A00-0x0AFF: motion limits
     PARAM_MAX_VELOCITY_RAD_S = 0x0A00,
@@ -126,6 +128,7 @@ enum ConfigParamId : uint16_t
     PARAM_CALTYPE_MOTOR = 0xFE00,
     PARAM_CALTYPE_ENCODER = 0xFE01,
     PARAM_CALTYPE_HOME = 0xFE02,
+    PARAM_CALTYPE_ANTICOGGING = 0xFE03,
 
     // 0xFF00-0xFFFF: diagnostics (read-only)
     PARAM_DRV_STATUS1 = 0xFF00,
@@ -140,6 +143,8 @@ enum ConfigParamId : uint16_t
     PARAM_ENCODER_CALIBRATION_PHASE = 0xFF09,
     PARAM_HOMING_FAIL_REASON = 0xFF0A,
     PARAM_HOMING_IN_PROGRESS = 0xFF0B,
+    PARAM_ANTICOGGING_FAIL_REASON = 0xFF0C, // R -- Axis::AnticoggingFailReason of the in-progress/last anticogging calibration
+    PARAM_ANTICOGGING_PHASE = 0xFF0D,       // R -- Axis::AnticoggingPhase of the in-progress/last anticogging calibration
 };
 
 // Raw 16-byte OUT report layout:
@@ -202,6 +207,7 @@ private:
     ConfigResponseReport lastResponse_{};
     bool encoder_calibration_pending_ = false;
     bool homing_pending_ = false;
+    bool anticogging_calibration_pending_ = false;
 
     void handleGet_(const ConfigCommandReport &cmd);
     void handleSet_(const ConfigCommandReport &cmd);
@@ -209,6 +215,7 @@ private:
     void handleCalibrateMotor_(const ConfigCommandReport &cmd);
     void handleCalibrateEncoder_(const ConfigCommandReport &cmd);
     void handleHome_(const ConfigCommandReport &cmd);
+    void handleCalibrateAnticogging_(const ConfigCommandReport &cmd);
     void handleSave_(const ConfigCommandReport &cmd);
     void handleFactoryReset_(const ConfigCommandReport &cmd);
 

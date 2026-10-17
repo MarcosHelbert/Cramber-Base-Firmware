@@ -17,6 +17,7 @@ public:
         IDLE,
         CALIBRATING_ENCODER,
         HOMING,
+        CALIBRATING_ANTICOGGING,
         RUNNING,
         ERROR,
     };
@@ -46,6 +47,23 @@ public:
         CPR_POLE_PAIRS_MISMATCH,
     };
 
+    enum class AnticoggingPhase
+    {
+        SETTLE,
+        SCAN,
+        COMPUTE,
+        DONE,
+        FAILED,
+    };
+
+    enum class AnticoggingFailReason
+    {
+        NONE = 0,
+        NOT_READY,
+        ARM_FAILED,
+        VELOCITY_NOT_REACHED,
+    };
+
 public:
     Axis(Motor &motor, Encoder &encoder, FFBManager &ffb_manager);
 
@@ -59,6 +77,12 @@ public:
 
     HomingFailReason getLastHomingFailReason() const { return last_homing_fail_reason_; }
     bool isHomingDone() const { return homing_done_; }
+
+    bool startAnticoggingCalibration();
+    void stopAnticoggingCalibration();
+
+    AnticoggingPhase getAnticoggingPhase() const { return anticogging_phase_; }
+    AnticoggingFailReason getLastAnticoggingFailReason() const { return last_anticogging_fail_reason_; }
 
     void setRunning(bool running)
     {
@@ -83,6 +107,7 @@ public:
 private:
     float smoothstepRamp_(float elapsed_s, float duration_s) const;
     float lutCorrection_(int32_t position_counts) const;
+    float anticoggingCorrection_(int32_t position_counts) const;
 
 private:
     Motor &motor_;
@@ -118,6 +143,15 @@ private:
     int32_t homing_start_counts_ = 0;
     float homing_settle_time_s_ = 0.0f;
     float homing_electrical_angle_ = 0.0f;
+
+    AnticoggingPhase anticogging_phase_ = AnticoggingPhase::SETTLE;
+    AnticoggingFailReason last_anticogging_fail_reason_ = AnticoggingFailReason::NONE;
+    float anticogging_settle_time_s_ = 0.0f;
+    float anticogging_velocity_integral_ = 0.0f;
+    int32_t anticogging_start_counts_ = 0;
+    uint32_t anticogging_sample_index_ = 0;
+    float anticogging_iq_sum_[kLutSize] = {};
+    uint32_t anticogging_iq_count_[kLutSize] = {};
 };
 
 #endif // AXIS_H

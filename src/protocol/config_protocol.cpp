@@ -165,7 +165,12 @@ void ConfigProtocol::handleCalibrate_(const ConfigCommandReport &cmd)
         return;
     }
 
-    // TODO: implement CALTYPE_ANTICOGGING (and anything else) isn't implemented yet.
+    if (cmd.param_id == PARAM_CALTYPE_ANTICOGGING)
+    {
+        handleCalibrateAnticogging_(cmd);
+        return;
+    }
+
     respond_(STATUS_ERR_BUSY, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
 }
 
@@ -279,6 +284,46 @@ void ConfigProtocol::handleHome_(const ConfigCommandReport &cmd)
     respond_(STATUS_IN_PROGRESS, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
 }
 
+void ConfigProtocol::handleCalibrateAnticogging_(const ConfigCommandReport &cmd)
+{
+    if (anticogging_calibration_pending_)
+    {
+        respond_(STATUS_ERR_BUSY, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
+        return;
+    }
+
+    if (!axis_.startAnticoggingCalibration())
+    {
+        uint8_t status = STATUS_ERR_CALIBRATION_FAILED;
+        switch (axis_.getLastAnticoggingFailReason())
+        {
+        case Axis::AnticoggingFailReason::NOT_READY:
+            status = STATUS_ERR_NOT_CALIBRATED;
+            break;
+        case Axis::AnticoggingFailReason::ARM_FAILED:
+            switch (motor_.getLastArmFailReason())
+            {
+            case Motor::ArmFailReason::POWER_OUT_OF_RANGE:
+                status = STATUS_ERR_POWER_FAULT;
+                break;
+            case Motor::ArmFailReason::DRIVER_FAULT:
+                status = STATUS_ERR_DRIVER_FAULT;
+                break;
+            default:
+                break;
+            }
+            break;
+        default:
+            break;
+        }
+        respond_(status, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
+        return;
+    }
+
+    anticogging_calibration_pending_ = true;
+    respond_(STATUS_IN_PROGRESS, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
+}
+
 void ConfigProtocol::poll()
 {
     if (encoder_calibration_pending_)
@@ -297,6 +342,16 @@ void ConfigProtocol::poll()
         {
             axis_.stopHoming();
             homing_pending_ = false;
+        }
+    }
+
+    if (anticogging_calibration_pending_)
+    {
+        Axis::AnticoggingPhase phase = axis_.getAnticoggingPhase();
+        if (phase == Axis::AnticoggingPhase::DONE || phase == Axis::AnticoggingPhase::FAILED)
+        {
+            axis_.stopAnticoggingCalibration();
+            anticogging_calibration_pending_ = false;
         }
     }
 }
@@ -461,6 +516,14 @@ bool ConfigProtocol::readParam_(uint16_t param_id, uint8_t &out_type, uint8_t ou
         out_type = VALUE_BOOL;
         packBool(out_value, c.anticogging_enabled);
         return true;
+    case PARAM_ANTICOGGING_CALIBRATED:
+        out_type = VALUE_BOOL;
+        packBool(out_value, c.anticogging_calibrated);
+        return true;
+    case PARAM_ANTICOGGING_SCAN_VELOCITY_RAD_S:
+        out_type = VALUE_F32;
+        packF32(out_value, c.anticogging_scan_velocity_rad_s);
+        return true;
 
     case PARAM_MAX_VELOCITY_RAD_S:
         out_type = VALUE_F32;
@@ -569,6 +632,14 @@ bool ConfigProtocol::readParam_(uint16_t param_id, uint8_t &out_type, uint8_t ou
     case PARAM_HOMING_IN_PROGRESS:
         out_type = VALUE_BOOL;
         packBool(out_value, axis_.getState() == Axis::State::HOMING);
+        return true;
+    case PARAM_ANTICOGGING_FAIL_REASON:
+        out_type = VALUE_U32;
+        packU32(out_value, static_cast<uint32_t>(axis_.getLastAnticoggingFailReason()));
+        return true;
+    case PARAM_ANTICOGGING_PHASE:
+        out_type = VALUE_U32;
+        packU32(out_value, static_cast<uint32_t>(axis_.getAnticoggingPhase()));
         return true;
 
     default:
@@ -734,6 +805,11 @@ uint8_t ConfigProtocol::writeParam_(uint16_t param_id, uint8_t type, const uint8
         if (type != VALUE_BOOL)
             return STATUS_ERR_UNKNOWN_PARAM;
         c.anticogging_enabled = unpackBool(value);
+        return STATUS_OK;
+    case PARAM_ANTICOGGING_SCAN_VELOCITY_RAD_S:
+        if (type != VALUE_F32)
+            return STATUS_ERR_UNKNOWN_PARAM;
+        c.anticogging_scan_velocity_rad_s = unpackF32(value);
         return STATUS_OK;
 
     case PARAM_MAX_VELOCITY_RAD_S:
