@@ -188,7 +188,8 @@ extern "C" void tim1_cc_isr(void)
     }
 
     Motor::MotorState motor_state = motor.getState();
-    bool driving_open_loop = axis.getState() == Axis::State::CALIBRATING_ENCODER;
+    Axis::State axis_state = axis.getState();
+    bool driving_open_loop = axis_state == Axis::State::CALIBRATING_ENCODER || axis_state == Axis::State::HOMING;
     bool calibrated = g_config.motor_calibrated && g_config.encoder_calibrated;
 
     if (motor_state != Motor::MotorState::ARMED || (!driving_open_loop && !calibrated))

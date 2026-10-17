@@ -116,6 +116,8 @@ private:
     HomingFailReason last_homing_fail_reason_ = HomingFailReason::NONE;
     bool homing_done_ = false;
     int32_t homing_start_counts_ = 0;
+    float homing_settle_time_s_ = 0.0f;
+    float homing_electrical_angle_ = 0.0f;
 };
 
 #endif // AXIS_H

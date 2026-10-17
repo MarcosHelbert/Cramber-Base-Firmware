@@ -83,6 +83,8 @@ bool Axis::startHoming()
     id_target_ = 0.0f;
     iq_target_ = 0.0f;
     homing_start_counts_ = encoder_.positionCounts();
+    homing_settle_time_s_ = 0.0f;
+    homing_electrical_angle_ = 0.0f;
 
     encoder_.setIdxSubscribe(true);
 
@@ -124,7 +126,8 @@ void Axis::update(float dt)
 
     if (state_ == State::HOMING)
     {
-        constexpr float kHomingCurrent = 0.5f;
+        constexpr float kSettleTimeS = 0.05f;
+        constexpr float kScanOmegaRadPerS = 4.0f * (TWO_PI / 2.0f);
         constexpr int32_t kDirectionDeadband = 8;
 
         if (encoder_.isIndexed())
@@ -135,8 +138,23 @@ void Axis::update(float dt)
             return;
         }
 
+        homing_settle_time_s_ += dt;
+        if (homing_settle_time_s_ < kSettleTimeS)
+        {
+            float smooth = smoothstepRamp_(homing_settle_time_s_, kSettleTimeS);
+            homing_electrical_angle_ = 0.0f;
+            id_target_ = 0.0f;
+            iq_target_ = g_config.calibration_test_current * smooth;
+            return;
+        }
+
+        homing_electrical_angle_ += kScanOmegaRadPerS * dt;
+        id_target_ = 0.0f;
+        iq_target_ = g_config.calibration_test_current;
+
         int32_t delta = encoder_.positionCounts() - homing_start_counts_;
-        if (delta > static_cast<int32_t>(g_config.encoder_cpr) + kDirectionDeadband)
+        if (delta > static_cast<int32_t>(g_config.encoder_cpr) + kDirectionDeadband ||
+            delta < -(static_cast<int32_t>(g_config.encoder_cpr) + kDirectionDeadband))
         {
             iq_target_ = 0.0f;
             encoder_.setIdxSubscribe(false);
@@ -144,7 +162,6 @@ void Axis::update(float dt)
             return;
         }
 
-        iq_target_ = kHomingCurrent;
         return;
     }
 
@@ -299,6 +316,11 @@ float Axis::getElectricalAngle() const
     if (state_ == State::CALIBRATING_ENCODER)
     {
         return electrical_angle_;
+    }
+
+    if (state_ == State::HOMING)
+    {
+        return normalizeAngle2Pi(homing_electrical_angle_);
     }
 
     float mechanical_angle = encoder_.angle();
