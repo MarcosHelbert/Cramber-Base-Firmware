@@ -154,6 +154,7 @@ int main()
     power_monitor.init();
     encoder.init();
     brake_resistor.init();
+    brake_resistor.arm();
 
     usb.init();
     drv8301.init();

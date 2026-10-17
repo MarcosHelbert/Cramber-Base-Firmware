@@ -72,7 +72,7 @@ struct PersistedConfig
     float bumpstop_damping = 0.3f;    // Velocity damping scale within the wall (A per rad/s)
 
     // --- Brake resistor ---
-    bool brake_resistor_enabled = false;           // Use the brake resistor at all
+    bool brake_resistor_enabled = true;            // Use the brake resistor at all
     float brake_resistor_resistance_ohm = 2.0f;    // Brake resistor value (ohm)
     float brake_resistor_power_rating_w = 50.0f;   // Brake resistor max power dissipation (W)
     float brake_resistor_max_regen_current = 0.0f; // Regen current allowed back to the supply before braking kicks in (A)
