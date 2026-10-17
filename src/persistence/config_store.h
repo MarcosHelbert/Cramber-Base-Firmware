@@ -45,7 +45,7 @@ struct PersistedConfig
     bool encoder_calibrated = false; // True if the encoder has been calibrated (mechanical offset and electrical offset set)
 
     // --- Homing ---
-    bool use_index_z = false;  // Use the Z/index pulse for absolute homing
+    bool use_index_z = true;   // Use the Z/index pulse for absolute homing;
     bool home_on_boot = false; // Run homing automatically at boot
 
     // --- Force feedback ---

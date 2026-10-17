@@ -63,6 +63,15 @@ bool Axis::startHoming()
         return false;
     }
 
+    if (!g_config.use_index_z)
+    {
+        g_config.mechanical_offset = encoder_.positionCounts();
+        last_homing_fail_reason_ = HomingFailReason::NONE;
+        homing_done_ = true;
+        state_ = State::HOMING;
+        return true;
+    }
+
     if (!motor_.arm())
     {
         last_homing_fail_reason_ = HomingFailReason::ARM_FAILED;
