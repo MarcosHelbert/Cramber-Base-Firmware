@@ -29,7 +29,7 @@ void FFBManager::recompute_(Effect &e)
     e.invAttackTime = (e.attackTime > 0u) ? (1.0f / static_cast<float>(e.attackTime)) : 0.0f;
     e.invFadeTime = (e.fadeTime > 0u) ? (1.0f / static_cast<float>(e.fadeTime)) : 0.0f;
 
-    e.invPeriod = (e.period > 0u) ? (TWO_PI / static_cast<float>(e.period)) : 0.0f;
+    e.invPeriod = (e.period > 0u) ? (1.0f / static_cast<float>(e.period)) : 0.0f;
     e.phaseRad = static_cast<float>(e.phase) * (TWO_PI / 36000.0f);
 
     constexpr float inv32767 = 1.0f / 32767.0f;

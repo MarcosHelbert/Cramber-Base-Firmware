@@ -225,16 +225,23 @@ void ConfigProtocol::handleCalibrateEncoder_(const ConfigCommandReport &cmd)
     if (!axis_.startCalibration())
     {
         uint8_t status = STATUS_ERR_CALIBRATION_FAILED;
-        switch (motor_.getLastArmFailReason())
+        if (axis_.getLastCalibrationFailReason() == Axis::CalibrationFailReason::NOT_HOMED)
         {
-        case Motor::ArmFailReason::POWER_OUT_OF_RANGE:
-            status = STATUS_ERR_POWER_FAULT;
-            break;
-        case Motor::ArmFailReason::DRIVER_FAULT:
-            status = STATUS_ERR_DRIVER_FAULT;
-            break;
-        default:
-            break;
+            status = STATUS_ERR_NOT_CALIBRATED;
+        }
+        else
+        {
+            switch (motor_.getLastArmFailReason())
+            {
+            case Motor::ArmFailReason::POWER_OUT_OF_RANGE:
+                status = STATUS_ERR_POWER_FAULT;
+                break;
+            case Motor::ArmFailReason::DRIVER_FAULT:
+                status = STATUS_ERR_DRIVER_FAULT;
+                break;
+            default:
+                break;
+            }
         }
         respond_(status, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
         return;
@@ -298,6 +305,7 @@ void ConfigProtocol::handleCalibrateAnticogging_(const ConfigCommandReport &cmd)
         switch (axis_.getLastAnticoggingFailReason())
         {
         case Axis::AnticoggingFailReason::NOT_READY:
+        case Axis::AnticoggingFailReason::NOT_HOMED:
             status = STATUS_ERR_NOT_CALIBRATED;
             break;
         case Axis::AnticoggingFailReason::ARM_FAILED:
@@ -554,6 +562,10 @@ bool ConfigProtocol::readParam_(uint16_t param_id, uint8_t &out_type, uint8_t ou
         out_type = VALUE_F32;
         packF32(out_value, c.brake_resistor_max_regen_current);
         return true;
+    case PARAM_BRAKE_RESISTOR_TRIGGER_VOLTAGE:
+        out_type = VALUE_F32;
+        packF32(out_value, c.brake_resistor_trigger_voltage);
+        return true;
 
     case PARAM_FFB_ENABLED_ON_BOOT:
         out_type = VALUE_BOOL;
@@ -632,6 +644,18 @@ bool ConfigProtocol::readParam_(uint16_t param_id, uint8_t &out_type, uint8_t ou
     case PARAM_HOMING_IN_PROGRESS:
         out_type = VALUE_BOOL;
         packBool(out_value, axis_.getState() == Axis::State::HOMING);
+        return true;
+    case PARAM_AXIS_STATE:
+        out_type = VALUE_U32;
+        packU32(out_value, static_cast<uint32_t>(axis_.getState()));
+        return true;
+    case PARAM_POSITION_REFERENCED:
+        out_type = VALUE_BOOL;
+        packBool(out_value, axis_.isPositionReferenced());
+        return true;
+    case PARAM_CALIBRATION_SCAN_DELTA_COUNTS:
+        out_type = VALUE_I32;
+        packI32(out_value, axis_.getLastScanDeltaCounts());
         return true;
     case PARAM_ANTICOGGING_FAIL_REASON:
         out_type = VALUE_U32;
@@ -721,16 +745,25 @@ uint8_t ConfigProtocol::writeParam_(uint16_t param_id, uint8_t type, const uint8
         if (type != VALUE_F32)
             return STATUS_ERR_UNKNOWN_PARAM;
         c.current_bandwidth_rad_s = unpackF32(value);
+
+        if (c.phase_resistance > 0.0f && c.phase_inductance > 0.0f)
+        {
+            c.current_kp = c.phase_inductance * c.current_bandwidth_rad_s;
+            c.current_ki = c.phase_resistance * c.current_bandwidth_rad_s;
+            foc_.updateGainsFromConfig();
+        }
         return STATUS_OK;
     case PARAM_CURRENT_KP:
         if (type != VALUE_F32)
             return STATUS_ERR_UNKNOWN_PARAM;
         c.current_kp = unpackF32(value);
+        foc_.updateGainsFromConfig();
         return STATUS_OK;
     case PARAM_CURRENT_KI:
         if (type != VALUE_F32)
             return STATUS_ERR_UNKNOWN_PARAM;
         c.current_ki = unpackF32(value);
+        foc_.updateGainsFromConfig();
         return STATUS_OK;
 
     case PARAM_CALIBRATION_MAX_VOLTAGE:
@@ -849,6 +882,11 @@ uint8_t ConfigProtocol::writeParam_(uint16_t param_id, uint8_t type, const uint8
             return STATUS_ERR_UNKNOWN_PARAM;
         c.brake_resistor_max_regen_current = unpackF32(value);
         return STATUS_OK;
+    case PARAM_BRAKE_RESISTOR_TRIGGER_VOLTAGE:
+        if (type != VALUE_F32)
+            return STATUS_ERR_UNKNOWN_PARAM;
+        c.brake_resistor_trigger_voltage = unpackF32(value);
+        return STATUS_OK;
 
     case PARAM_FFB_ENABLED_ON_BOOT:
     {
@@ -875,6 +913,9 @@ uint8_t ConfigProtocol::writeParam_(uint16_t param_id, uint8_t type, const uint8
         }
 
         if (!(c.motor_calibrated && c.encoder_calibrated))
+            return STATUS_ERR_NOT_CALIBRATED;
+
+        if (!axis_.isPositionReferenced())
             return STATUS_ERR_NOT_CALIBRATED;
 
         if (!motor_.arm())
@@ -924,5 +965,8 @@ uint8_t ConfigProtocol::writeParam_(uint16_t param_id, uint8_t type, const uint8
         c.bumpstop_damping = unpackF32(value);
         axis_.initBumpstop();
         return STATUS_OK;
+
+    default:
+        return STATUS_ERR_UNKNOWN_PARAM;
     }
 }

@@ -19,6 +19,12 @@ float Axis::smoothstepRamp_(float elapsed_s, float duration_s) const
 
 bool Axis::startCalibration()
 {
+    if (!isPositionReferenced())
+    {
+        last_fail_reason_ = CalibrationFailReason::NOT_HOMED;
+        return false;
+    }
+
     if (!motor_.arm())
         return false;
 
@@ -31,12 +37,14 @@ bool Axis::startCalibration()
     lut_sample_index_ = 0;
     lut_microstep_index_ = 0;
     lut_start_mech_angle_ = 0.0f;
-    lut_end_mech_angle_ = 0.0f;
+    lut_offset_estimate_ = 0.0f;
 
     for (uint32_t i = 0; i < kLutSize; i++)
     {
         lut_error_fwd_[i] = 0.0f;
         lut_error_bwd_[i] = 0.0f;
+        lut_count_fwd_[i] = 0;
+        lut_count_bwd_[i] = 0;
     }
 
     state_ = State::CALIBRATING_ENCODER;
@@ -57,7 +65,7 @@ void Axis::stopCalibration()
 
 bool Axis::startHoming()
 {
-    if (!g_config.motor_calibrated || !g_config.encoder_calibrated)
+    if (!g_config.motor_calibrated)
     {
         last_homing_fail_reason_ = HomingFailReason::NOT_READY;
         return false;
@@ -105,6 +113,12 @@ bool Axis::startAnticoggingCalibration()
     if (!g_config.motor_calibrated || !g_config.encoder_calibrated)
     {
         last_anticogging_fail_reason_ = AnticoggingFailReason::NOT_READY;
+        return false;
+    }
+
+    if (!isPositionReferenced())
+    {
+        last_anticogging_fail_reason_ = AnticoggingFailReason::NOT_HOMED;
         return false;
     }
 
@@ -201,6 +215,7 @@ void Axis::update(float dt)
             {
                 anticogging_start_counts_ = encoder_.positionCounts();
                 anticogging_sample_index_ = 0;
+                anticogging_settle_time_s_ = 0.0f;
                 anticogging_phase_ = AnticoggingPhase::SCAN;
                 return;
             }
@@ -217,18 +232,24 @@ void Axis::update(float dt)
 
         if (anticogging_phase_ == AnticoggingPhase::SCAN)
         {
-            int32_t delta = encoder_.positionCounts() - anticogging_start_counts_;
-            float fraction = static_cast<float>(delta) / static_cast<float>(g_config.encoder_cpr);
-            fraction = std::clamp(fraction, 0.0f, 1.0f);
+            int32_t position_counts = encoder_.positionCounts();
+            int32_t delta = position_counts - anticogging_start_counts_;
 
-            uint32_t idx = static_cast<uint32_t>(fraction * static_cast<float>(kLutSize));
-            if (idx >= kLutSize)
-                idx = kLutSize - 1;
-
+            uint32_t idx = lutBucket_(position_counts);
             anticogging_iq_sum_[idx] += iq;
             anticogging_iq_count_[idx]++;
 
-            if (static_cast<uint32_t>(delta) >= g_config.encoder_cpr)
+            anticogging_settle_time_s_ += dt;
+            const float scan_timeout_s = 4.0f * (TWO_PI / std::max(target_velocity, 0.1f)) + 2.0f;
+            if (anticogging_settle_time_s_ > scan_timeout_s)
+            {
+                iq_target_ = 0.0f;
+                anticogging_phase_ = AnticoggingPhase::FAILED;
+                last_anticogging_fail_reason_ = AnticoggingFailReason::VELOCITY_NOT_REACHED;
+                return;
+            }
+
+            if (delta >= static_cast<int32_t>(g_config.encoder_cpr))
             {
                 iq_target_ = 0.0f;
                 anticogging_phase_ = AnticoggingPhase::COMPUTE;
@@ -257,14 +278,13 @@ void Axis::update(float dt)
 
             for (uint32_t i = 0; i < kLutSize; i++)
             {
-                g_config.anticogging_map[i] = -(averaged[i] - mean_iq);
+                g_config.anticogging_map[i] = averaged[i] - mean_iq;
             }
 
             anticogging_phase_ = AnticoggingPhase::DONE;
             return;
         }
 
-        // DONE/FAILED
         iq_target_ = 0.0f;
         return;
     }
@@ -331,7 +351,8 @@ void Axis::update(float dt)
         if (settle_time_s_ >= kSettleTimeS)
         {
             scan_start_counts_ = position_counts;
-            lut_start_mech_angle_ = encoder_.angle();
+            lut_start_mech_angle_ = encoder_.rawAngle();
+            lut_offset_estimate_ = normalizeAngle2Pi(lut_start_mech_angle_ * pole_pairs);
             lut_sample_index_ = 0;
             lut_microstep_index_ = 0;
             phase_ = CalibrationPhase::SCAN_FWD;
@@ -343,21 +364,33 @@ void Axis::update(float dt)
     {
         electrical_angle_ += kStepRad;
         id_target_ = g_config.calibration_test_current;
-        lut_microstep_index_++;
 
+        float theta_est = encoder_.rawAngle() * pole_pairs - lut_offset_estimate_;
+        uint32_t bucket = lutBucket_(position_counts);
+        lut_error_fwd_[bucket] += normalizeAngle(electrical_angle_ - theta_est);
+        lut_count_fwd_[bucket]++;
+
+        lut_microstep_index_++;
         if (lut_microstep_index_ >= kMicroStepsPerSample)
         {
             lut_microstep_index_ = 0;
-            float theta_actual = encoder_.angle() * pole_pairs;
-            float error = normalizeAngle(electrical_angle_ - theta_actual);
-            lut_error_fwd_[lut_sample_index_] = error;
             lut_sample_index_++;
 
             if (lut_sample_index_ >= kLutSize)
             {
                 int32_t delta = position_counts - scan_start_counts_;
+                last_scan_delta_counts_ = delta;
 
-                if (delta > kDirectionDeadband || delta < -kDirectionDeadband)
+                if (delta < -kDirectionDeadband)
+                {
+                    g_config.encoder_reverse = !g_config.encoder_reverse;
+                    encoder_.reset();
+                    phase_ = CalibrationPhase::FAILED;
+                    last_fail_reason_ = CalibrationFailReason::ENCODER_DIRECTION_REVERSED;
+                    break;
+                }
+
+                if (delta > kDirectionDeadband)
                 {
                     float elec_rad_per_count = (pole_pairs * TWO_PI) / static_cast<float>(g_config.encoder_cpr);
                     float expected_count_delta = kTotalSweepRad / elec_rad_per_count;
@@ -388,19 +421,20 @@ void Axis::update(float dt)
     {
         electrical_angle_ -= kStepRad;
         id_target_ = g_config.calibration_test_current;
-        lut_microstep_index_++;
 
+        float theta_est = encoder_.rawAngle() * pole_pairs - lut_offset_estimate_;
+        uint32_t bucket = lutBucket_(position_counts);
+        lut_error_bwd_[bucket] += normalizeAngle(electrical_angle_ - theta_est);
+        lut_count_bwd_[bucket]++;
+
+        lut_microstep_index_++;
         if (lut_microstep_index_ >= kMicroStepsPerSample)
         {
             lut_microstep_index_ = 0;
-            float theta_actual = encoder_.angle() * pole_pairs;
-            float error = normalizeAngle(electrical_angle_ - theta_actual);
-            lut_error_bwd_[lut_sample_index_] = error;
             lut_sample_index_++;
 
             if (lut_sample_index_ >= kLutSize)
             {
-                lut_end_mech_angle_ = encoder_.angle();
                 id_target_ = 0.0f;
                 phase_ = CalibrationPhase::COMPUTE;
             }
@@ -413,7 +447,12 @@ void Axis::update(float dt)
         float error_avg[kLutSize];
         for (uint32_t i = 0; i < kLutSize; i++)
         {
-            error_avg[i] = (lut_error_fwd_[i] + lut_error_bwd_[kLutSize - 1 - i]) * 0.5f;
+            float fwd = lut_count_fwd_[i] ? lut_error_fwd_[i] / static_cast<float>(lut_count_fwd_[i]) : 0.0f;
+            float bwd = lut_count_bwd_[i] ? lut_error_bwd_[i] / static_cast<float>(lut_count_bwd_[i]) : 0.0f;
+            if (lut_count_fwd_[i] && lut_count_bwd_[i])
+                error_avg[i] = (fwd + bwd) * 0.5f;
+            else
+                error_avg[i] = lut_count_fwd_[i] ? fwd : bwd;
         }
 
         constexpr uint32_t kFilterHalfWindow = 2;
@@ -441,8 +480,7 @@ void Axis::update(float dt)
             g_config.encoder_lut[i] = error_filtered[i] - mean_error;
         }
 
-        float raw_offset_mech = (lut_start_mech_angle_ + lut_end_mech_angle_) * 0.5f;
-        g_config.encoder_offset_rad = normalizeAngle2Pi((raw_offset_mech * pole_pairs) + mean_error);
+        g_config.encoder_offset_rad = normalizeAngle2Pi(lut_offset_estimate_ - mean_error);
 
         id_target_ = 0.0f;
         phase_ = CalibrationPhase::DONE;
@@ -468,7 +506,7 @@ float Axis::getElectricalAngle() const
         return normalizeAngle2Pi(homing_electrical_angle_);
     }
 
-    float mechanical_angle = encoder_.angle();
+    float mechanical_angle = encoder_.rawAngle();
     float electrical_angle = (mechanical_angle * static_cast<float>(g_config.motor_pole_pairs)) - g_config.encoder_offset_rad;
 
     if (g_config.encoder_lut_calibrated)
@@ -479,28 +517,36 @@ float Axis::getElectricalAngle() const
     return normalizeAngle2Pi(electrical_angle);
 }
 
-float Axis::lutCorrection_(int32_t position_counts) const
+static float interpolateTable(const float *table, uint32_t size, int32_t position_counts, uint32_t cpr)
 {
-    const uint32_t cpr = g_config.encoder_cpr;
-    uint32_t wrapped = static_cast<uint32_t>(((position_counts % static_cast<int32_t>(cpr)) + static_cast<int32_t>(cpr)) % static_cast<int32_t>(cpr));
+    const int32_t icpr = static_cast<int32_t>(cpr);
+    int32_t wrapped = ((position_counts % icpr) + icpr) % icpr;
 
-    float index_f = (static_cast<float>(wrapped) / static_cast<float>(cpr)) * static_cast<float>(kLutSize);
-    uint32_t i0 = static_cast<uint32_t>(index_f) % kLutSize;
-    uint32_t i1 = (i0 + 1) % kLutSize;
+    float index_f = (static_cast<float>(wrapped) / static_cast<float>(cpr)) * static_cast<float>(size) - 0.5f;
+    if (index_f < 0.0f)
+        index_f += static_cast<float>(size);
+
+    uint32_t i0 = static_cast<uint32_t>(index_f) % size;
+    uint32_t i1 = (i0 + 1) % size;
     float frac = index_f - static_cast<float>(static_cast<uint32_t>(index_f));
 
-    return g_config.encoder_lut[i0] + (g_config.encoder_lut[i1] - g_config.encoder_lut[i0]) * frac;
+    return table[i0] + (table[i1] - table[i0]) * frac;
+}
+
+float Axis::lutCorrection_(int32_t position_counts) const
+{
+    return interpolateTable(g_config.encoder_lut, kLutSize, position_counts, g_config.encoder_cpr);
+}
+
+uint32_t Axis::lutBucket_(int32_t position_counts) const
+{
+    const int32_t cpr = static_cast<int32_t>(g_config.encoder_cpr);
+    int32_t wrapped = ((position_counts % cpr) + cpr) % cpr;
+    uint32_t bucket = static_cast<uint32_t>((static_cast<int64_t>(wrapped) * kLutSize) / cpr);
+    return bucket < kLutSize ? bucket : kLutSize - 1;
 }
 
 float Axis::anticoggingCorrection_(int32_t position_counts) const
 {
-    const uint32_t cpr = g_config.encoder_cpr;
-    uint32_t wrapped = static_cast<uint32_t>(((position_counts % static_cast<int32_t>(cpr)) + static_cast<int32_t>(cpr)) % static_cast<int32_t>(cpr));
-
-    float index_f = (static_cast<float>(wrapped) / static_cast<float>(cpr)) * static_cast<float>(kLutSize);
-    uint32_t i0 = static_cast<uint32_t>(index_f) % kLutSize;
-    uint32_t i1 = (i0 + 1) % kLutSize;
-    float frac = index_f - static_cast<float>(static_cast<uint32_t>(index_f));
-
-    return g_config.anticogging_map[i0] + (g_config.anticogging_map[i1] - g_config.anticogging_map[i0]) * frac;
+    return interpolateTable(g_config.anticogging_map, kLutSize, position_counts, g_config.encoder_cpr);
 }

@@ -45,6 +45,8 @@ public:
         NONE = 0,
         ENCODER_DIRECTION_UNCLEAR,
         CPR_POLE_PAIRS_MISMATCH,
+        ENCODER_DIRECTION_REVERSED,
+        NOT_HOMED,
     };
 
     enum class AnticoggingPhase
@@ -62,6 +64,7 @@ public:
         NOT_READY,
         ARM_FAILED,
         VELOCITY_NOT_REACHED,
+        NOT_HOMED,
     };
 
 public:
@@ -101,13 +104,18 @@ public:
     CalibrationFailReason getLastCalibrationFailReason() const { return last_fail_reason_; }
 
     int32_t getEncoderPositionCounts() const { return encoder_.positionCounts(); }
+    // Counts the encoder moved during the last forward scan (expected ~= cpr).
+    int32_t getLastScanDeltaCounts() const { return last_scan_delta_counts_; }
 
     State getState() const { return state_; }
+
+    bool isPositionReferenced() const { return !g_config.use_index_z || encoder_.isIndexed(); }
 
 private:
     float smoothstepRamp_(float elapsed_s, float duration_s) const;
     float lutCorrection_(int32_t position_counts) const;
     float anticoggingCorrection_(int32_t position_counts) const;
+    uint32_t lutBucket_(int32_t position_counts) const;
 
 private:
     Motor &motor_;
@@ -129,14 +137,17 @@ private:
     static constexpr uint32_t kMicroStepsPerSample = 40;
 
     int32_t scan_start_counts_ = 0;
+    int32_t last_scan_delta_counts_ = 0;
     uint32_t lut_sample_index_ = 0;
     uint32_t lut_microstep_index_ = 0;
 
     float lut_error_fwd_[kLutSize] = {};
     float lut_error_bwd_[kLutSize] = {};
+    uint32_t lut_count_fwd_[kLutSize] = {};
+    uint32_t lut_count_bwd_[kLutSize] = {};
 
     float lut_start_mech_angle_ = 0.0f;
-    float lut_end_mech_angle_ = 0.0f;
+    float lut_offset_estimate_ = 0.0f;
 
     HomingFailReason last_homing_fail_reason_ = HomingFailReason::NONE;
     bool homing_done_ = false;

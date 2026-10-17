@@ -56,10 +56,16 @@ void BrakeResistor::update(float vbus, float ibus)
     static float ibus_filt = 0.0f;
     ibus_filt += (ibus - ibus_filt) * 0.5f;
 
-    brake_current = -ibus_filt - config_.brake_resistor_max_regen_current;
-    if (brake_current > 0.0f)
+    constexpr float kRampV = 2.0f;
+    const float over_v = vbus - config_.brake_resistor_trigger_voltage;
+    if (over_v > 0.0f)
     {
-        brake_duty = (brake_current * R) / vbus;
+        brake_current = -ibus_filt - config_.brake_resistor_max_regen_current;
+        if (brake_current > 0.0f)
+        {
+            brake_duty = (brake_current * R) / vbus;
+        }
+        brake_duty = std::max(brake_duty, over_v / kRampV);
     }
 
     if (brake_duty >= 0.95f)

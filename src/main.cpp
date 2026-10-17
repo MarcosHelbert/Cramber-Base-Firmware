@@ -71,6 +71,10 @@ static void usb_task(void *arg)
         {
             usb.setAxis(encoder.angle(), g_config.steering_range_deg);
         }
+        else
+        {
+            usb.setAxis(0.0f, g_config.steering_range_deg);
+        }
         usb.update();
         config_protocol.poll();
 
@@ -81,7 +85,7 @@ static void usb_task(void *arg)
 static void axis_task(void *arg)
 {
     (void)arg;
-    if (g_config.home_on_boot)
+    if (g_config.home_on_boot || (g_config.ffb_enabled_on_boot && g_config.use_index_z))
     {
         if (axis.startHoming())
         {
@@ -102,7 +106,8 @@ static void axis_task(void *arg)
         }
     }
 
-    if (g_config.ffb_enabled_on_boot && g_config.motor_calibrated && g_config.encoder_calibrated)
+    if (g_config.ffb_enabled_on_boot && g_config.motor_calibrated && g_config.encoder_calibrated &&
+        axis.isPositionReferenced())
     {
         if (motor.arm())
         {
@@ -148,6 +153,14 @@ int main()
     dwt_init();
     watchdog_init_();
     config_store.load();
+    if (!g_config.use_index_z)
+    {
+        g_config.encoder_calibrated = false;
+        g_config.encoder_lut_calibrated = false;
+        g_config.anticogging_calibrated = false;
+    }
+
+    foc.updateGainsFromConfig();
     axis.initBumpstop();
     adc.init();
     current_sensor.init();

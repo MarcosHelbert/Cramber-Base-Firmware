@@ -25,6 +25,8 @@ public:
 
     int32_t positionCounts() const { return absolute_position_; }
 
+    float rawAngle() const { return static_cast<float>(absolute_position_) * two_pi_over_cpr_; }
+
 private:
     const PersistedConfig &config_;
 

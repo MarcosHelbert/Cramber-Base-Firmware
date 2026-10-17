@@ -22,7 +22,7 @@ struct PersistedConfig
     float current_amp_gain = 80.0f;   // 10, 20, 40, 80V/V for DRV8301
 
     // --- Motor parameters ---
-    uint32_t motor_pole_pairs = 15;    // Motor pole pairs (hardware constant, set by the user for the specific motor)
+    uint32_t motor_pole_pairs = 15;    // Motor pole pairs
     float motor_flux_linkage = 0.005f; // Rotor flux linkage (Wb), used for back-EMF feedforward
     float phase_resistance = 0.0f;
     float phase_inductance = 0.0f;
@@ -42,7 +42,7 @@ struct PersistedConfig
     bool encoder_reverse = false;    // Invert counting direction
     int32_t mechanical_offset = 0;   // Raw encoder count at the index pulse
     float encoder_offset_rad = 0.0f; // Electrical angle offset from alignment
-    bool encoder_calibrated = false; // True if the encoder has been calibrated (mechanical offset and electrical offset set)
+    bool encoder_calibrated = false; // True if the encoder has been calibrated
 
     // --- Homing ---
     bool use_index_z = true;   // Use the Z/index pulse for absolute homing;
@@ -79,6 +79,7 @@ struct PersistedConfig
     float brake_resistor_resistance_ohm = 2.0f;    // Brake resistor value (ohm)
     float brake_resistor_power_rating_w = 50.0f;   // Brake resistor max power dissipation (W)
     float brake_resistor_max_regen_current = 0.0f; // Regen current allowed back to the supply before braking kicks in (A)
+    float brake_resistor_trigger_voltage = 26.0f;  // Only brake above this bus voltage
 };
 
 extern PersistedConfig g_config;
