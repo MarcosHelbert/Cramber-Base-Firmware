@@ -10,6 +10,7 @@
 #include <motor/motor.h>
 #include <motor/startup_sound.h>
 #include <persistence/config_store.h>
+#include <persistence/user_prefs_store.h>
 
 static constexpr uint32_t kFirmwareVersion = 1;
 
@@ -27,6 +28,7 @@ enum ConfigCommand : uint8_t
     CMD_FACTORY_RESET = 0x06,
     CMD_REBOOT = 0x07,
     CMD_CLEAR_FAULT = 0x08,
+    CMD_FACTORY_MODE = 0x09,
 };
 
 enum ConfigStatus : uint8_t
@@ -40,6 +42,7 @@ enum ConfigStatus : uint8_t
     STATUS_IN_PROGRESS = 0x06,
     STATUS_ERR_POWER_FAULT = 0x07,
     STATUS_ERR_DRIVER_FAULT = 0x08,
+    STATUS_ERR_ACCESS_DENIED = 0x09,
 };
 
 enum ConfigValueType : uint8_t
@@ -206,7 +209,9 @@ class ConfigProtocol
 {
 public:
     ConfigProtocol(Motor &motor, FOC &foc, DRV8301 &drv8301, Axis &axis, ConfigStore &config_store, FFBManager &ffb_manager,
-                   StartupSound &startup_sound);
+                   StartupSound &startup_sound, UserPrefsStore &user_prefs);
+
+    void init();
     void hidSet(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize);
     uint16_t hidGet(uint8_t report_id, uint8_t *buffer);
 
@@ -220,6 +225,32 @@ private:
     ConfigStore &config_store_;
     FFBManager &ffb_manager_;
     StartupSound &startup_sound_;
+    UserPrefsStore &user_prefs_;
+
+    enum class ParamScope
+    {
+        USER,
+        USER_PERSISTENT,
+        STATUS,
+        FACTORY,
+    };
+    static ParamScope scopeOf_(uint16_t param_id);
+
+    struct UserDefaults
+    {
+        float steering_range_deg;
+        bool bumpstop_enabled;
+        float bumpstop_range_deg;
+        float bumpstop_stiffness;
+        float bumpstop_damping;
+        float idle_spring_stiffness;
+        float idle_spring_damping;
+    };
+    void captureUserDefaults_();
+    void applyUserDefaults_();
+
+    bool factory_mode_ = false;
+    UserDefaults user_defaults_{};
 
     ConfigCommandReport lastCommand_{};
     ConfigResponseReport lastResponse_{};

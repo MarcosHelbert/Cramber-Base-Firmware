@@ -49,9 +49,77 @@ namespace
 }
 
 ConfigProtocol::ConfigProtocol(Motor &motor, FOC &foc, DRV8301 &drv8301, Axis &axis, ConfigStore &config_store, FFBManager &ffb_manager,
-                               StartupSound &startup_sound)
+                               StartupSound &startup_sound, UserPrefsStore &user_prefs)
     : motor_(motor), foc_(foc), drv8301_(drv8301), axis_(axis), config_store_(config_store), ffb_manager_(ffb_manager),
-      startup_sound_(startup_sound) {}
+      startup_sound_(startup_sound), user_prefs_(user_prefs) {}
+
+void ConfigProtocol::init()
+{
+    captureUserDefaults_();
+}
+
+ConfigProtocol::ParamScope ConfigProtocol::scopeOf_(uint16_t param_id)
+{
+    switch (param_id)
+    {
+    case PARAM_STEERING_RANGE_DEG:
+    case PARAM_BUMPSTOP_ENABLED:
+    case PARAM_BUMPSTOP_RANGE_DEG:
+    case PARAM_BUMPSTOP_STIFFNESS:
+    case PARAM_BUMPSTOP_DAMPING:
+    case PARAM_IDLE_SPRING_STIFFNESS:
+    case PARAM_IDLE_SPRING_DAMPING:
+    case PARAM_FFB_ACTIVE:
+    case PARAM_STARTUP_SOUND_PLAY:
+        return ParamScope::USER;
+
+    case PARAM_STARTUP_SOUND_ENABLED:
+    case PARAM_IDLE_SPRING_ENABLED:
+        return ParamScope::USER_PERSISTENT;
+
+    case PARAM_FW_VERSION:
+    case PARAM_CONFIG_SCHEMA_VERSION:
+    case PARAM_MOTOR_CALIBRATED:
+    case PARAM_ENCODER_CALIBRATED:
+    case PARAM_ANTICOGGING_CALIBRATED:
+    case PARAM_AXIS_STATE:
+    case PARAM_POSITION_REFERENCED:
+    case PARAM_HOMING_IN_PROGRESS:
+    case PARAM_HOMING_FAIL_REASON:
+    case PARAM_DRV_HAS_FAULT:
+    case PARAM_ARM_FAIL_REASON:
+    case PARAM_GAME_FFB_ACTIVE:
+        return ParamScope::STATUS;
+
+    default:
+        return ParamScope::FACTORY;
+    }
+}
+
+void ConfigProtocol::captureUserDefaults_()
+{
+    const PersistedConfig &c = g_config;
+    user_defaults_.steering_range_deg = c.steering_range_deg;
+    user_defaults_.bumpstop_enabled = c.bumpstop_enabled;
+    user_defaults_.bumpstop_range_deg = c.bumpstop_range_deg;
+    user_defaults_.bumpstop_stiffness = c.bumpstop_stiffness;
+    user_defaults_.bumpstop_damping = c.bumpstop_damping;
+    user_defaults_.idle_spring_stiffness = c.idle_spring_stiffness;
+    user_defaults_.idle_spring_damping = c.idle_spring_damping;
+}
+
+void ConfigProtocol::applyUserDefaults_()
+{
+    PersistedConfig &c = g_config;
+    c.steering_range_deg = user_defaults_.steering_range_deg;
+    c.bumpstop_enabled = user_defaults_.bumpstop_enabled;
+    c.bumpstop_range_deg = user_defaults_.bumpstop_range_deg;
+    c.bumpstop_stiffness = user_defaults_.bumpstop_stiffness;
+    c.bumpstop_damping = user_defaults_.bumpstop_damping;
+    c.idle_spring_stiffness = user_defaults_.idle_spring_stiffness;
+    c.idle_spring_damping = user_defaults_.idle_spring_damping;
+    axis_.initBumpstop();
+}
 
 void ConfigProtocol::hidSet(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize)
 {
@@ -71,6 +139,13 @@ void ConfigProtocol::hidSet(uint8_t report_id, uint8_t const *buffer, uint16_t b
         handleGet_(cmd);
         break;
 
+    case CMD_FACTORY_MODE:
+        factory_mode_ = cmd.value[0] != 0;
+        if (factory_mode_)
+            applyUserDefaults_();
+        respond_(STATUS_OK, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
+        break;
+
     case CMD_SET:
         handleSet_(cmd);
         break;
@@ -85,10 +160,20 @@ void ConfigProtocol::hidSet(uint8_t report_id, uint8_t const *buffer, uint16_t b
         break;
 
     case CMD_SAVE:
+        if (!factory_mode_)
+        {
+            respond_(STATUS_ERR_ACCESS_DENIED, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
+            break;
+        }
         handleSave_(cmd);
         break;
 
     case CMD_FACTORY_RESET:
+        if (!factory_mode_)
+        {
+            respond_(STATUS_ERR_ACCESS_DENIED, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
+            break;
+        }
         handleFactoryReset_(cmd);
         break;
 
@@ -138,7 +223,8 @@ void ConfigProtocol::handleGet_(const ConfigCommandReport &cmd)
     uint8_t type = VALUE_NONE;
     uint8_t value[4] = {0};
 
-    if (!readParam_(cmd.param_id, type, value))
+    if ((!factory_mode_ && scopeOf_(cmd.param_id) == ParamScope::FACTORY) ||
+        !readParam_(cmd.param_id, type, value))
     {
         respond_(STATUS_ERR_UNKNOWN_PARAM, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
         return;
@@ -149,6 +235,12 @@ void ConfigProtocol::handleGet_(const ConfigCommandReport &cmd)
 
 void ConfigProtocol::handleCalibrate_(const ConfigCommandReport &cmd)
 {
+    if (!factory_mode_ && cmd.param_id != PARAM_CALTYPE_HOME)
+    {
+        respond_(STATUS_ERR_ACCESS_DENIED, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
+        return;
+    }
+
     if (cmd.param_id == PARAM_CALTYPE_MOTOR)
     {
         handleCalibrateMotor_(cmd);
@@ -408,6 +500,7 @@ void ConfigProtocol::handleFactoryReset_(const ConfigCommandReport &cmd)
 
     prepareFlashWrite_();
     config_store_.eraseStoredImage();
+    user_prefs_.erase();
 
     respond_(STATUS_OK, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
     scb_reset_system();
@@ -415,7 +508,25 @@ void ConfigProtocol::handleFactoryReset_(const ConfigCommandReport &cmd)
 
 void ConfigProtocol::handleSet_(const ConfigCommandReport &cmd)
 {
-    uint8_t status = writeParam_(cmd.param_id, cmd.value_type, cmd.value);
+    const ParamScope scope = scopeOf_(cmd.param_id);
+    uint8_t status = STATUS_OK;
+
+    if (!factory_mode_ && scope == ParamScope::FACTORY)
+        status = STATUS_ERR_UNKNOWN_PARAM;
+    else if (!factory_mode_ && scope == ParamScope::STATUS)
+        status = STATUS_ERR_ACCESS_DENIED;
+    else
+        status = writeParam_(cmd.param_id, cmd.value_type, cmd.value);
+
+    if (status == STATUS_OK && scope == ParamScope::USER && factory_mode_)
+        captureUserDefaults_();
+
+    if (status == STATUS_OK && scope == ParamScope::USER_PERSISTENT && !factory_mode_)
+    {
+        if (!user_prefs_.save(g_config, motor_.getState() == Motor::MotorState::ARMED))
+            status = STATUS_ERR_BUSY;
+    }
+
     if (status != STATUS_OK)
     {
         respond_(status, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);

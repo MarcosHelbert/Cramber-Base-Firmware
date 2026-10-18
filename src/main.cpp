@@ -17,6 +17,7 @@
 #include <motor/startup_sound.h>
 
 #include <persistence/config_store.h>
+#include <persistence/user_prefs_store.h>
 
 #include <power/brake_resistor.h>
 #include <power/current_sensor.h>
@@ -29,6 +30,7 @@
 #include <usb/usb.h>
 
 ConfigStore config_store;
+UserPrefsStore user_prefs;
 
 DRV8301 drv8301 = DRV8301(g_config);
 Encoder encoder = Encoder(g_config);
@@ -46,7 +48,7 @@ Motor motor = Motor(g_config, power_monitor, current_sensor, drv8301);
 Axis axis = Axis(motor, encoder, ffb_manager);
 StartupSound startup_sound = StartupSound(g_config);
 
-ConfigProtocol config_protocol = ConfigProtocol(motor, foc, drv8301, axis, config_store, ffb_manager, startup_sound);
+ConfigProtocol config_protocol = ConfigProtocol(motor, foc, drv8301, axis, config_store, ffb_manager, startup_sound, user_prefs);
 
 USB usb;
 
@@ -186,6 +188,7 @@ int main()
     dwt_init();
     watchdog_init_();
     config_store.load();
+    user_prefs.load(g_config);
     if (!g_config.use_index_z)
     {
         g_config.encoder_calibrated = false;
@@ -195,6 +198,7 @@ int main()
 
     foc.updateGainsFromConfig();
     axis.initBumpstop();
+    config_protocol.init();
     adc.init();
     current_sensor.init();
     power_monitor.init();
