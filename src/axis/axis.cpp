@@ -181,6 +181,7 @@ void Axis::update(float dt)
 
         float torque = ffb_manager_.getTorque(position_rad, velocity, acceleration, millis());
         torque += bumpstop_.calculate(position_rad, velocity);
+        torque += idle_spring_.calculate(position_rad, velocity, ffb_manager_.isGameDriving(millis()), dt);
 
         if (g_config.anticogging_enabled && g_config.anticogging_calibrated)
         {

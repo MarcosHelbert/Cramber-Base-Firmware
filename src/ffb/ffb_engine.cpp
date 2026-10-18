@@ -51,7 +51,7 @@ int32_t FFBEngine::spring(const EffectCondition &c, float position)
     return (int32_t)std::clamp(force, -sat * 32767.0f, sat * 32767.0f);
 }
 
-int32_t FFBEngine::inertia(const EffectCondition &c, float velocity, float acceleration)
+int32_t FFBEngine::inertia(const EffectCondition &c, float acceleration)
 {
     if (!c.isActive())
         return 0;
@@ -227,7 +227,7 @@ float FFBEngine::computeTorqueNorm(
             break;
 
         case EFFECT_INERTIA:
-            result = (float)inertia(e.condition, velocityRadS, accelerationRadS2);
+            result = (float)inertia(e.condition, accelerationRadS2);
             break;
 
         case EFFECT_SPRING:

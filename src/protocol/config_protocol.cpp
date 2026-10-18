@@ -607,6 +607,18 @@ bool ConfigProtocol::readParam_(uint16_t param_id, uint8_t &out_type, uint8_t ou
         out_type = VALUE_F32;
         packF32(out_value, c.ffb_slew_rate_a_per_s);
         return true;
+    case PARAM_IDLE_SPRING_ENABLED:
+        out_type = VALUE_BOOL;
+        packBool(out_value, c.idle_spring_enabled);
+        return true;
+    case PARAM_IDLE_SPRING_STIFFNESS:
+        out_type = VALUE_F32;
+        packF32(out_value, c.idle_spring_stiffness);
+        return true;
+    case PARAM_IDLE_SPRING_DAMPING:
+        out_type = VALUE_F32;
+        packF32(out_value, c.idle_spring_damping);
+        return true;
 
     case PARAM_BUMPSTOP_ENABLED:
         out_type = VALUE_BOOL;
@@ -705,6 +717,10 @@ bool ConfigProtocol::readParam_(uint16_t param_id, uint8_t &out_type, uint8_t ou
     case PARAM_SOUND_PEAK_CURRENT:
         out_type = VALUE_F32;
         packF32(out_value, startup_sound_.getPeakCurrent());
+        return true;
+    case PARAM_GAME_FFB_ACTIVE:
+        out_type = VALUE_BOOL;
+        packBool(out_value, ffb_manager_.isGameDriving(millis()));
         return true;
     case PARAM_ANTICOGGING_FAIL_REASON:
         out_type = VALUE_U32;
@@ -988,6 +1004,21 @@ uint8_t ConfigProtocol::writeParam_(uint16_t param_id, uint8_t type, const uint8
         if (type != VALUE_F32)
             return STATUS_ERR_UNKNOWN_PARAM;
         c.ffb_slew_rate_a_per_s = unpackF32(value);
+        return STATUS_OK;
+    case PARAM_IDLE_SPRING_ENABLED:
+        if (type != VALUE_BOOL)
+            return STATUS_ERR_UNKNOWN_PARAM;
+        c.idle_spring_enabled = unpackBool(value);
+        return STATUS_OK;
+    case PARAM_IDLE_SPRING_STIFFNESS:
+        if (type != VALUE_F32)
+            return STATUS_ERR_UNKNOWN_PARAM;
+        c.idle_spring_stiffness = unpackF32(value);
+        return STATUS_OK;
+    case PARAM_IDLE_SPRING_DAMPING:
+        if (type != VALUE_F32)
+            return STATUS_ERR_UNKNOWN_PARAM;
+        c.idle_spring_damping = unpackF32(value);
         return STATUS_OK;
 
     case PARAM_BUMPSTOP_ENABLED:

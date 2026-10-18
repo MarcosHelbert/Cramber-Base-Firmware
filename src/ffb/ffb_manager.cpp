@@ -75,6 +75,8 @@ void FFBManager::hidSet(uint8_t report_id, uint8_t const *buffer, uint16_t bufsi
     if (!buffer || bufsize == 0)
         return;
 
+    lastHostReportMs_ = millis();
+
     cdcLog("report_id=%u bufsize=%u\n", report_id, bufsize);
 
     for (uint16_t i = 0; i < bufsize; i++)
@@ -396,7 +398,6 @@ void FFBManager::effectOperation_(EffectOperation_Data *d)
 
     const uint32_t now = millis();
     const uint8_t eidx = d->effectBlockIndex - 1;
-    const uint32_t eidxBit = 1u << eidx;
 
     switch (d->state)
     {

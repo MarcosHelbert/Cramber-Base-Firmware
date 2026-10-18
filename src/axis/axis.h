@@ -5,6 +5,7 @@
 
 #include <encoder/encoder.h>
 #include <ffb/bumpstop.h>
+#include <ffb/idle_spring.h>
 #include <ffb/ffb_manager.h>
 #include <motor/motor.h>
 #include <persistence/config_store.h>
@@ -90,7 +91,10 @@ public:
     void setRunning(bool running)
     {
         if (running)
+        {
             iq_prev_ = 0.0f;
+            idle_spring_.reset();
+        }
         state_ = running ? State::RUNNING : State::IDLE;
     }
 
@@ -122,6 +126,7 @@ private:
     Encoder &encoder_;
     FFBManager &ffb_manager_;
     BumpStop bumpstop_;
+    IdleSpring idle_spring_;
 
     State state_ = State::IDLE;
     float iq_prev_ = 0.0f;

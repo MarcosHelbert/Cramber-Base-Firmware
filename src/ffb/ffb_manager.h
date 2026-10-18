@@ -23,6 +23,13 @@ public:
 
     bool isFFBActive() const { return ffbActive_ && !devicePaused_; }
     bool isDevicePaused() const { return devicePaused_; }
+
+    bool isGameDriving(uint32_t nowMs) const
+    {
+        constexpr uint32_t kHostSilentTimeoutMs = 5000;
+        return ffbActive_ && !devicePaused_ && activeMask_ != 0 &&
+               (nowMs - lastHostReportMs_) < kHostSilentTimeoutMs;
+    }
     uint8_t getGain() const { return gain_; }
 
     const std::array<Effect, MAX_EFFECTS> &getEffects() const { return effects_; }
@@ -66,6 +73,7 @@ private:
 
     uint16_t usedEffects_ = 0;
     uint32_t activeMask_ = 0;
+    volatile uint32_t lastHostReportMs_ = 0;
 
     BlockLoad_Data blockLoad_{};
     PIDPool_Data pool_{};

@@ -28,7 +28,7 @@ private:
     int32_t conditionForce(const EffectCondition &c, float inputNorm);
     int32_t damper(const EffectCondition &c, float velocity);
     int32_t spring(const EffectCondition &c, float position);
-    int32_t inertia(const EffectCondition &c, float velocity, float acceleration);
+    int32_t inertia(const EffectCondition &c, float acceleration);
     int32_t friction(const EffectCondition &c, float velocity);
 
     int32_t applyEnvelope(const Effect &e, uint32_t elapsed, int32_t magnitude);
