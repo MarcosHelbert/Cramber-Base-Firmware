@@ -125,7 +125,9 @@ static void axis_task(void *arg)
             uint32_t waited_ms = 0;
             constexpr uint32_t kHomingTimeoutMs = 30000;
 
-            while (axis.getState() == Axis::State::HOMING && waited_ms < kHomingTimeoutMs)
+            while (!axis.isHomingDone() &&
+                   axis.getLastHomingFailReason() == Axis::HomingFailReason::NONE &&
+                   waited_ms < kHomingTimeoutMs)
             {
                 iwdg_reset();
                 axis.update(1.0f / 1000.0f);
