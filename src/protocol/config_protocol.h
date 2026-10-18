@@ -8,6 +8,7 @@
 #include <ffb/ffb_manager.h>
 #include <motor/foc.h>
 #include <motor/motor.h>
+#include <motor/startup_sound.h>
 #include <persistence/config_store.h>
 
 static constexpr uint32_t kFirmwareVersion = 1;
@@ -125,6 +126,11 @@ enum ConfigParamId : uint16_t
     PARAM_BUMPSTOP_STIFFNESS = 0x0D02,
     PARAM_BUMPSTOP_DAMPING = 0x0D03,
 
+    // 0x0E00-0x0EFF: startup sound
+    PARAM_STARTUP_SOUND_ENABLED = 0x0E00,
+    PARAM_STARTUP_SOUND_VOLUME_A = 0x0E01,
+    PARAM_STARTUP_SOUND_PLAY = 0x0E02,
+
     // 0xFE00-0xFEFF: calibration type selectors (value of CMD_CALIBRATE)
     PARAM_CALTYPE_MOTOR = 0xFE00,
     PARAM_CALTYPE_ENCODER = 0xFE01,
@@ -149,6 +155,8 @@ enum ConfigParamId : uint16_t
     PARAM_AXIS_STATE = 0xFF0E,
     PARAM_POSITION_REFERENCED = 0xFF0F,
     PARAM_CALIBRATION_SCAN_DELTA_COUNTS = 0xFF10,
+    PARAM_SOUND_PEAK_VOLTAGE = 0xFF11,
+    PARAM_SOUND_PEAK_CURRENT = 0xFF12,
 };
 
 // Raw 16-byte OUT report layout:
@@ -193,7 +201,8 @@ static_assert(sizeof(ConfigResponseReport) == CONFIG_REPORT_SIZE, "ConfigRespons
 class ConfigProtocol
 {
 public:
-    ConfigProtocol(Motor &motor, FOC &foc, DRV8301 &drv8301, Axis &axis, ConfigStore &config_store, FFBManager &ffb_manager);
+    ConfigProtocol(Motor &motor, FOC &foc, DRV8301 &drv8301, Axis &axis, ConfigStore &config_store, FFBManager &ffb_manager,
+                   StartupSound &startup_sound);
     void hidSet(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize);
     uint16_t hidGet(uint8_t report_id, uint8_t *buffer);
 
@@ -206,12 +215,14 @@ private:
     Axis &axis_;
     ConfigStore &config_store_;
     FFBManager &ffb_manager_;
+    StartupSound &startup_sound_;
 
     ConfigCommandReport lastCommand_{};
     ConfigResponseReport lastResponse_{};
     bool encoder_calibration_pending_ = false;
     bool homing_pending_ = false;
     bool anticogging_calibration_pending_ = false;
+    bool sound_pending_ = false;
 
     void handleGet_(const ConfigCommandReport &cmd);
     void handleSet_(const ConfigCommandReport &cmd);
@@ -222,6 +233,7 @@ private:
     void handleCalibrateAnticogging_(const ConfigCommandReport &cmd);
     void handleSave_(const ConfigCommandReport &cmd);
     void handleFactoryReset_(const ConfigCommandReport &cmd);
+    void prepareFlashWrite_();
 
     bool readParam_(uint16_t param_id, uint8_t &out_type, uint8_t out_value[4]) const;
     uint8_t writeParam_(uint16_t param_id, uint8_t type, const uint8_t value[4]);

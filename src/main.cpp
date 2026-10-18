@@ -14,6 +14,7 @@
 
 #include <motor/foc.h>
 #include <motor/motor.h>
+#include <motor/startup_sound.h>
 
 #include <persistence/config_store.h>
 
@@ -43,8 +44,9 @@ PowerMonitor power_monitor = PowerMonitor(g_config);
 FOC foc = FOC(g_config, g_config.pwm_freq_hz);
 Motor motor = Motor(g_config, power_monitor, current_sensor, drv8301);
 Axis axis = Axis(motor, encoder, ffb_manager);
+StartupSound startup_sound = StartupSound(g_config);
 
-ConfigProtocol config_protocol = ConfigProtocol(motor, foc, drv8301, axis, config_store, ffb_manager);
+ConfigProtocol config_protocol = ConfigProtocol(motor, foc, drv8301, axis, config_store, ffb_manager, startup_sound);
 
 USB usb;
 
@@ -82,9 +84,38 @@ static void usb_task(void *arg)
     }
 }
 
+static void play_startup_sound_()
+{
+    if (!g_config.startup_sound_enabled || !g_config.motor_calibrated)
+        return;
+
+    vTaskDelay(pdMS_TO_TICKS(300));
+    iwdg_reset();
+
+    if (!motor.arm())
+        return;
+
+    if (startup_sound.start())
+    {
+        constexpr uint32_t kTimeoutMs = 3000;
+        uint32_t waited_ms = 0;
+        while (startup_sound.isPlaying() && waited_ms < kTimeoutMs)
+        {
+            iwdg_reset();
+            vTaskDelay(pdMS_TO_TICKS(10));
+            waited_ms += 10;
+        }
+        startup_sound.stop();
+    }
+
+    motor.disarm();
+}
+
 static void axis_task(void *arg)
 {
     (void)arg;
+    play_startup_sound_();
+
     if (g_config.home_on_boot || (g_config.ffb_enabled_on_boot && g_config.use_index_z))
     {
         if (axis.startHoming())
@@ -204,6 +235,15 @@ extern "C" void tim1_cc_isr(void)
     Axis::State axis_state = axis.getState();
     bool driving_open_loop = axis_state == Axis::State::CALIBRATING_ENCODER || axis_state == Axis::State::HOMING;
     bool calibrated = g_config.motor_calibrated && g_config.encoder_calibrated;
+
+    if (motor_state == Motor::MotorState::ARMED && startup_sound.isPlaying())
+    {
+        startup_sound.notePhaseCurrent(current_sensor.getIa());
+        float v = startup_sound.update(vbus);
+        motor.setOutput(v, -0.5f * v, -0.5f * v);
+        previous_ibus = 0.0f;
+        return;
+    }
 
     if (motor_state != Motor::MotorState::ARMED || (!driving_open_loop && !calibrated))
     {

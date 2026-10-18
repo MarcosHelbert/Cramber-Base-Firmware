@@ -48,8 +48,10 @@ namespace
     bool unpackBool(const uint8_t v[4]) { return v[0] != 0; }
 }
 
-ConfigProtocol::ConfigProtocol(Motor &motor, FOC &foc, DRV8301 &drv8301, Axis &axis, ConfigStore &config_store, FFBManager &ffb_manager)
-    : motor_(motor), foc_(foc), drv8301_(drv8301), axis_(axis), config_store_(config_store), ffb_manager_(ffb_manager) {}
+ConfigProtocol::ConfigProtocol(Motor &motor, FOC &foc, DRV8301 &drv8301, Axis &axis, ConfigStore &config_store, FFBManager &ffb_manager,
+                               StartupSound &startup_sound)
+    : motor_(motor), foc_(foc), drv8301_(drv8301), axis_(axis), config_store_(config_store), ffb_manager_(ffb_manager),
+      startup_sound_(startup_sound) {}
 
 void ConfigProtocol::hidSet(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize)
 {
@@ -334,6 +336,12 @@ void ConfigProtocol::handleCalibrateAnticogging_(const ConfigCommandReport &cmd)
 
 void ConfigProtocol::poll()
 {
+    if (sound_pending_ && !startup_sound_.isPlaying())
+    {
+        motor_.disarm();
+        sound_pending_ = false;
+    }
+
     if (encoder_calibration_pending_)
     {
         Axis::CalibrationPhase phase = axis_.getCalibrationPhase();
@@ -364,11 +372,27 @@ void ConfigProtocol::poll()
     }
 }
 
+void ConfigProtocol::prepareFlashWrite_()
+{
+    ffb_manager_.stopFFB();
+    if (axis_.getState() == Axis::State::RUNNING)
+        axis_.setRunning(false);
+    motor_.disarm();
+
+    iwdg_set_period_ms(5000);
+    iwdg_reset();
+}
+
 void ConfigProtocol::handleSave_(const ConfigCommandReport &cmd)
 {
-    iwdg_reset();
+    if (axis_.getState() != Axis::State::IDLE && axis_.getState() != Axis::State::RUNNING)
+    {
+        respond_(STATUS_ERR_BUSY, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
+        return;
+    }
+
+    prepareFlashWrite_();
     config_store_.save();
-    iwdg_reset();
 
     respond_(STATUS_OK, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
     scb_reset_system();
@@ -376,13 +400,17 @@ void ConfigProtocol::handleSave_(const ConfigCommandReport &cmd)
 
 void ConfigProtocol::handleFactoryReset_(const ConfigCommandReport &cmd)
 {
-    iwdg_reset();
-    config_store_.eraseStoredImage();
-    iwdg_reset();
+    if (axis_.getState() != Axis::State::IDLE && axis_.getState() != Axis::State::RUNNING)
+    {
+        respond_(STATUS_ERR_BUSY, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
+        return;
+    }
 
-    g_config = PersistedConfig{};
+    prepareFlashWrite_();
+    config_store_.eraseStoredImage();
 
     respond_(STATUS_OK, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
+    scb_reset_system();
 }
 
 void ConfigProtocol::handleSet_(const ConfigCommandReport &cmd)
@@ -597,6 +625,19 @@ bool ConfigProtocol::readParam_(uint16_t param_id, uint8_t &out_type, uint8_t ou
         packF32(out_value, c.bumpstop_damping);
         return true;
 
+    case PARAM_STARTUP_SOUND_ENABLED:
+        out_type = VALUE_BOOL;
+        packBool(out_value, c.startup_sound_enabled);
+        return true;
+    case PARAM_STARTUP_SOUND_VOLUME_A:
+        out_type = VALUE_F32;
+        packF32(out_value, c.startup_sound_volume_a);
+        return true;
+    case PARAM_STARTUP_SOUND_PLAY:
+        out_type = VALUE_BOOL;
+        packBool(out_value, startup_sound_.isPlaying());
+        return true;
+
     case PARAM_DRV_STATUS1:
         out_type = VALUE_U32;
         packU32(out_value, drv8301_.getStatus1());
@@ -656,6 +697,14 @@ bool ConfigProtocol::readParam_(uint16_t param_id, uint8_t &out_type, uint8_t ou
     case PARAM_CALIBRATION_SCAN_DELTA_COUNTS:
         out_type = VALUE_I32;
         packI32(out_value, axis_.getLastScanDeltaCounts());
+        return true;
+    case PARAM_SOUND_PEAK_VOLTAGE:
+        out_type = VALUE_F32;
+        packF32(out_value, startup_sound_.getPeakVoltage());
+        return true;
+    case PARAM_SOUND_PEAK_CURRENT:
+        out_type = VALUE_F32;
+        packF32(out_value, startup_sound_.getPeakCurrent());
         return true;
     case PARAM_ANTICOGGING_FAIL_REASON:
         out_type = VALUE_U32;
@@ -965,6 +1014,53 @@ uint8_t ConfigProtocol::writeParam_(uint16_t param_id, uint8_t type, const uint8
         c.bumpstop_damping = unpackF32(value);
         axis_.initBumpstop();
         return STATUS_OK;
+
+    case PARAM_STARTUP_SOUND_ENABLED:
+        if (type != VALUE_BOOL)
+            return STATUS_ERR_UNKNOWN_PARAM;
+        c.startup_sound_enabled = unpackBool(value);
+        return STATUS_OK;
+    case PARAM_STARTUP_SOUND_VOLUME_A:
+        if (type != VALUE_F32)
+            return STATUS_ERR_UNKNOWN_PARAM;
+        c.startup_sound_volume_a = unpackF32(value);
+        return STATUS_OK;
+    case PARAM_STARTUP_SOUND_PLAY:
+    {
+        if (type != VALUE_BOOL)
+            return STATUS_ERR_UNKNOWN_PARAM;
+        if (!unpackBool(value))
+            return STATUS_OK;
+        if (!c.motor_calibrated)
+            return STATUS_ERR_NOT_CALIBRATED;
+        if (sound_pending_ || startup_sound_.isPlaying())
+            return STATUS_ERR_BUSY;
+
+        if (axis_.getState() == Axis::State::RUNNING && motor_.getState() == Motor::MotorState::ARMED)
+            return startup_sound_.start() ? STATUS_OK : STATUS_ERR_NOT_CALIBRATED;
+
+        if (axis_.getState() != Axis::State::IDLE || motor_.getState() == Motor::MotorState::ARMED)
+            return STATUS_ERR_BUSY;
+        if (!motor_.arm())
+        {
+            switch (motor_.getLastArmFailReason())
+            {
+            case Motor::ArmFailReason::POWER_OUT_OF_RANGE:
+                return STATUS_ERR_POWER_FAULT;
+            case Motor::ArmFailReason::DRIVER_FAULT:
+                return STATUS_ERR_DRIVER_FAULT;
+            default:
+                return STATUS_ERR_CALIBRATION_FAILED;
+            }
+        }
+        if (!startup_sound_.start())
+        {
+            motor_.disarm();
+            return STATUS_ERR_NOT_CALIBRATED;
+        }
+        sound_pending_ = true;
+        return STATUS_OK;
+    }
 
     default:
         return STATUS_ERR_UNKNOWN_PARAM;

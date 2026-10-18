@@ -21,12 +21,12 @@ void ConfigStore::load()
         return;
     if (stored->schema_version != kConfigSchemaVersion)
         return;
-    if (stored->size != sizeof(PersistedConfig))
+    if (stored->size == 0 || stored->size > sizeof(PersistedConfig))
         return;
-    if (stored->crc32 != computeCrc(*stored))
+    if (stored->crc32 != computeCrc(*stored, stored->size))
         return;
 
-    g_config = stored->config;
+    std::memcpy(&g_config, &stored->config, stored->size);
 }
 
 void ConfigStore::save()
@@ -36,9 +36,10 @@ void ConfigStore::save()
     image.schema_version = kConfigSchemaVersion;
     image.size = sizeof(PersistedConfig);
     image.config = g_config;
-    image.crc32 = computeCrc(image);
+    image.crc32 = computeCrc(image, image.size);
 
     flash_unlock();
+    flash_clear_status_flags();
     flash_erase_sector(kFlashSector, FLASH_CR_PROGRAM_X32);
 
     const uint32_t *src = reinterpret_cast<const uint32_t *>(&image);
@@ -54,6 +55,7 @@ void ConfigStore::save()
 void ConfigStore::eraseStoredImage()
 {
     flash_unlock();
+    flash_clear_status_flags();
     flash_erase_sector(kFlashSector, FLASH_CR_PROGRAM_X32);
     flash_lock();
 }
@@ -73,9 +75,8 @@ uint32_t ConfigStore::crc32(const uint8_t *data, uint32_t len)
     return ~crc;
 }
 
-uint32_t ConfigStore::computeCrc(const StoredImage &image)
+uint32_t ConfigStore::computeCrc(const StoredImage &image, uint32_t len)
 {
     const uint8_t *start = reinterpret_cast<const uint8_t *>(&image.config);
-    uint32_t len = sizeof(PersistedConfig);
     return crc32(start, len);
 }

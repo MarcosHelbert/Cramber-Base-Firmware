@@ -80,6 +80,10 @@ struct PersistedConfig
     float brake_resistor_power_rating_w = 50.0f;   // Brake resistor max power dissipation (W)
     float brake_resistor_max_regen_current = 0.0f; // Regen current allowed back to the supply before braking kicks in (A)
     float brake_resistor_trigger_voltage = 26.0f;  // Only brake above this bus voltage
+
+    // --- Startup sound ---
+    bool startup_sound_enabled = true;   // Play the startup melody through the motor at boot
+    float startup_sound_volume_a = 0.5f; // Tone current amplitude (A)
 };
 
 extern PersistedConfig g_config;
@@ -105,7 +109,7 @@ private:
 
 private:
     uint32_t crc32(const uint8_t *data, uint32_t len);
-    uint32_t computeCrc(const StoredImage &image);
+    uint32_t computeCrc(const StoredImage &image, uint32_t len);
 };
 
 #endif // CONFIG_STORE_H

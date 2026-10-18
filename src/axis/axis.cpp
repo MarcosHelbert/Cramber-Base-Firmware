@@ -33,6 +33,7 @@ bool Axis::startCalibration()
     electrical_angle_ = 0.0f;
     id_target_ = 0.0f;
     settle_time_s_ = 0.0f;
+    settle_still_s_ = 0.0f;
     scan_start_counts_ = 0;
     lut_sample_index_ = 0;
     lut_microstep_index_ = 0;
@@ -162,6 +163,16 @@ void Axis::update(float dt)
 {
     if (state_ == State::RUNNING)
     {
+        if (motor_.getState() != Motor::MotorState::ARMED)
+        {
+            ffb_manager_.stopFFB();
+            iq_prev_ = 0.0f;
+            id_target_ = 0.0f;
+            iq_target_ = 0.0f;
+            state_ = State::IDLE;
+            return;
+        }
+
         float max_step = g_config.ffb_slew_rate_a_per_s * dt;
 
         float position_rad = encoder_.angle();
@@ -330,7 +341,6 @@ void Axis::update(float dt)
         return;
     }
 
-    constexpr float kSettleTimeS = 0.05f;
     const float pole_pairs = static_cast<float>(g_config.motor_pole_pairs);
     constexpr float kCalibrationRange = 0.05f;
     constexpr int32_t kDirectionDeadband = 8;
@@ -343,13 +353,33 @@ void Axis::update(float dt)
     {
     case CalibrationPhase::SETTLE:
     {
+        constexpr float kRampS = 0.15f;
+        constexpr float kHoldFirstS = 0.30f;
+        constexpr float kSlewS = 0.15f;
+        constexpr float kMinSettleS = 0.70f;
+        constexpr float kMaxSettleS = 3.0f;
+        constexpr float kStillVelocity = 0.2f;
+        constexpr float kStillTimeS = 0.10f;
+        constexpr float kHalfPi = TWO_PI * 0.25f;
+
         settle_time_s_ += dt;
-        float smooth = smoothstepRamp_(settle_time_s_, kSettleTimeS);
-        electrical_angle_ = 0.0f;
+        float smooth = smoothstepRamp_(settle_time_s_, kRampS);
         id_target_ = g_config.calibration_test_current * smooth;
 
-        if (settle_time_s_ >= kSettleTimeS)
+        if (settle_time_s_ < kHoldFirstS)
+            electrical_angle_ = kHalfPi;
+        else
+            electrical_angle_ = kHalfPi * (1.0f - std::min((settle_time_s_ - kHoldFirstS) / kSlewS, 1.0f));
+
+        if (std::abs(encoder_.velocity()) < kStillVelocity)
+            settle_still_s_ += dt;
+        else
+            settle_still_s_ = 0.0f;
+
+        bool settled = settle_time_s_ >= kMinSettleS && settle_still_s_ >= kStillTimeS;
+        if (settled || settle_time_s_ >= kMaxSettleS)
         {
+            electrical_angle_ = 0.0f;
             scan_start_counts_ = position_counts;
             lut_start_mech_angle_ = encoder_.rawAngle();
             lut_offset_estimate_ = normalizeAngle2Pi(lut_start_mech_angle_ * pole_pairs);

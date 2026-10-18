@@ -132,6 +132,7 @@ private:
     float id_target_ = 0.0f;
     float iq_target_ = 0.0f;
     float settle_time_s_ = 0.0f;
+    float settle_still_s_ = 0.0f;
 
     static constexpr uint32_t kLutSize = PersistedConfig::kEncoderLutSize;
     static constexpr uint32_t kMicroStepsPerSample = 40;
