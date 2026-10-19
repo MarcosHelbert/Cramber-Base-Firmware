@@ -248,10 +248,10 @@ private:
         float steering_range_deg;
         bool bumpstop_enabled;
         float bumpstop_range_deg;
-        float bumpstop_stiffness;
-        float bumpstop_damping;
-        float idle_spring_stiffness;
-        float idle_spring_damping;
+        float bumpstop_hardness;
+        float bumpstop_cushion;
+        float idle_spring_strength;
+        float idle_spring_smoothing;
         float ffb_gain;
         float ffb_detail;
         float natural_damping;

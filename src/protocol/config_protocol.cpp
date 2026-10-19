@@ -119,16 +119,16 @@ bool ConfigProtocol::readUserDefault_(uint16_t param_id, uint8_t &out_type, uint
         packF32(out_value, d.bumpstop_range_deg);
         return true;
     case PARAM_BUMPSTOP_STIFFNESS:
-        packF32(out_value, d.bumpstop_stiffness);
+        packF32(out_value, d.bumpstop_hardness);
         return true;
     case PARAM_BUMPSTOP_DAMPING:
-        packF32(out_value, d.bumpstop_damping);
+        packF32(out_value, d.bumpstop_cushion);
         return true;
     case PARAM_IDLE_SPRING_STIFFNESS:
-        packF32(out_value, d.idle_spring_stiffness);
+        packF32(out_value, d.idle_spring_strength);
         return true;
     case PARAM_IDLE_SPRING_DAMPING:
-        packF32(out_value, d.idle_spring_damping);
+        packF32(out_value, d.idle_spring_smoothing);
         return true;
     case PARAM_FFB_GAIN:
         packF32(out_value, d.ffb_gain);
@@ -156,10 +156,10 @@ void ConfigProtocol::captureUserDefaults_()
     user_defaults_.steering_range_deg = c.steering_range_deg;
     user_defaults_.bumpstop_enabled = c.bumpstop_enabled;
     user_defaults_.bumpstop_range_deg = c.bumpstop_range_deg;
-    user_defaults_.bumpstop_stiffness = c.bumpstop_stiffness;
-    user_defaults_.bumpstop_damping = c.bumpstop_damping;
-    user_defaults_.idle_spring_stiffness = c.idle_spring_stiffness;
-    user_defaults_.idle_spring_damping = c.idle_spring_damping;
+    user_defaults_.bumpstop_hardness = c.bumpstop_hardness;
+    user_defaults_.bumpstop_cushion = c.bumpstop_cushion;
+    user_defaults_.idle_spring_strength = c.idle_spring_strength;
+    user_defaults_.idle_spring_smoothing = c.idle_spring_smoothing;
     user_defaults_.ffb_gain = c.ffb_gain;
     user_defaults_.ffb_detail = c.ffb_detail;
     user_defaults_.natural_damping = c.natural_damping;
@@ -173,10 +173,10 @@ void ConfigProtocol::applyUserDefaults_()
     c.steering_range_deg = user_defaults_.steering_range_deg;
     c.bumpstop_enabled = user_defaults_.bumpstop_enabled;
     c.bumpstop_range_deg = user_defaults_.bumpstop_range_deg;
-    c.bumpstop_stiffness = user_defaults_.bumpstop_stiffness;
-    c.bumpstop_damping = user_defaults_.bumpstop_damping;
-    c.idle_spring_stiffness = user_defaults_.idle_spring_stiffness;
-    c.idle_spring_damping = user_defaults_.idle_spring_damping;
+    c.bumpstop_hardness = user_defaults_.bumpstop_hardness;
+    c.bumpstop_cushion = user_defaults_.bumpstop_cushion;
+    c.idle_spring_strength = user_defaults_.idle_spring_strength;
+    c.idle_spring_smoothing = user_defaults_.idle_spring_smoothing;
     c.ffb_gain = user_defaults_.ffb_gain;
     c.ffb_detail = user_defaults_.ffb_detail;
     c.natural_damping = user_defaults_.natural_damping;
@@ -801,11 +801,11 @@ bool ConfigProtocol::readParam_(uint16_t param_id, uint8_t &out_type, uint8_t ou
         return true;
     case PARAM_IDLE_SPRING_STIFFNESS:
         out_type = VALUE_F32;
-        packF32(out_value, c.idle_spring_stiffness);
+        packF32(out_value, c.idle_spring_strength);
         return true;
     case PARAM_IDLE_SPRING_DAMPING:
         out_type = VALUE_F32;
-        packF32(out_value, c.idle_spring_damping);
+        packF32(out_value, c.idle_spring_smoothing);
         return true;
     case PARAM_FFB_GAIN:
         out_type = VALUE_F32;
@@ -838,11 +838,11 @@ bool ConfigProtocol::readParam_(uint16_t param_id, uint8_t &out_type, uint8_t ou
         return true;
     case PARAM_BUMPSTOP_STIFFNESS:
         out_type = VALUE_F32;
-        packF32(out_value, c.bumpstop_stiffness);
+        packF32(out_value, c.bumpstop_hardness);
         return true;
     case PARAM_BUMPSTOP_DAMPING:
         out_type = VALUE_F32;
-        packF32(out_value, c.bumpstop_damping);
+        packF32(out_value, c.bumpstop_cushion);
         return true;
 
     case PARAM_STARTUP_SOUND_ENABLED:
@@ -1228,15 +1228,25 @@ uint8_t ConfigProtocol::writeParam_(uint16_t param_id, uint8_t type, const uint8
         c.idle_spring_enabled = unpackBool(value);
         return STATUS_OK;
     case PARAM_IDLE_SPRING_STIFFNESS:
+    {
         if (type != VALUE_F32)
             return STATUS_ERR_UNKNOWN_PARAM;
-        c.idle_spring_stiffness = unpackF32(value);
+        const float v = unpackF32(value);
+        if (!(v >= 0.0f && v <= 1.0f))
+            return STATUS_ERR_INVALID_VALUE;
+        c.idle_spring_strength = v;
         return STATUS_OK;
+    }
     case PARAM_IDLE_SPRING_DAMPING:
+    {
         if (type != VALUE_F32)
             return STATUS_ERR_UNKNOWN_PARAM;
-        c.idle_spring_damping = unpackF32(value);
+        const float v = unpackF32(value);
+        if (!(v >= 0.0f && v <= 1.0f))
+            return STATUS_ERR_INVALID_VALUE;
+        c.idle_spring_smoothing = v;
         return STATUS_OK;
+    }
     case PARAM_FFB_GAIN:
     {
         if (type != VALUE_F32)
@@ -1301,17 +1311,27 @@ uint8_t ConfigProtocol::writeParam_(uint16_t param_id, uint8_t type, const uint8
         axis_.initBumpstop();
         return STATUS_OK;
     case PARAM_BUMPSTOP_STIFFNESS:
+    {
         if (type != VALUE_F32)
             return STATUS_ERR_UNKNOWN_PARAM;
-        c.bumpstop_stiffness = unpackF32(value);
+        const float v = unpackF32(value);
+        if (!(v >= 0.0f && v <= 1.0f))
+            return STATUS_ERR_INVALID_VALUE;
+        c.bumpstop_hardness = v;
         axis_.initBumpstop();
         return STATUS_OK;
+    }
     case PARAM_BUMPSTOP_DAMPING:
+    {
         if (type != VALUE_F32)
             return STATUS_ERR_UNKNOWN_PARAM;
-        c.bumpstop_damping = unpackF32(value);
+        const float v = unpackF32(value);
+        if (!(v >= 0.0f && v <= 1.0f))
+            return STATUS_ERR_INVALID_VALUE;
+        c.bumpstop_cushion = v;
         axis_.initBumpstop();
         return STATUS_OK;
+    }
 
     case PARAM_STARTUP_SOUND_ENABLED:
         if (type != VALUE_BOOL)

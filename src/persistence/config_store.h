@@ -5,6 +5,11 @@
 
 static constexpr uint32_t kConfigSchemaVersion = 1;
 
+static constexpr float kIdleSpringMaxStiffness = 5.0f; // A per rad
+static constexpr float kIdleSpringMaxDamping = 0.5f;   // A per rad/s
+static constexpr float kBumpstopMaxStiffness = 5.0f;   // A at full penetration
+static constexpr float kBumpstopMaxDamping = 2.0f;     // A per rad/s
+
 struct PersistedConfig
 {
     // --- Current and bus limits ---
@@ -71,8 +76,8 @@ struct PersistedConfig
     // --- Bumpstop ---
     bool bumpstop_enabled = true;     // Apply the bumpstop torque near +-steering_range_deg/2
     float bumpstop_range_deg = 10.0f; // Angular width of the wall transition zone, each side (deg)
-    float bumpstop_stiffness = 1.5f;  // Spring torque scale at full penetration (A)
-    float bumpstop_damping = 0.3f;    // Velocity damping scale within the wall (A per rad/s)
+    float bumpstop_stiffness = 1.5f;  // LEGACY (A) -- only read to migrate old images, see bumpstop_hardness
+    float bumpstop_damping = 0.3f;    // LEGACY (A per rad/s) -- see bumpstop_cushion
 
     // --- Brake resistor ---
     bool brake_resistor_enabled = true;            // Use the brake resistor at all
@@ -87,8 +92,8 @@ struct PersistedConfig
 
     // --- Idle spring ---
     bool idle_spring_enabled = true;
-    float idle_spring_stiffness = 1.0f; // A per rad
-    float idle_spring_damping = 0.05f;  // A per rad/s
+    float idle_spring_stiffness = 1.0f; // LEGACY (A per rad) -- see idle_spring_strength
+    float idle_spring_damping = 0.05f;  // LEGACY (A per rad/s) -- see idle_spring_smoothing
 
     // --- Game FFB shaping and natural effects ---
     float ffb_gain = 1.0f;         // Scales the game's force feedback only
@@ -96,6 +101,12 @@ struct PersistedConfig
     float natural_damping = 0.0f;  // Resists wheel speed
     float natural_friction = 0.0f; // Constant drag
     float natural_inertia = 0.0f;  // Resists acceleration
+
+    // --- Spring/wall strengths as fractions 0..1 ---
+    float idle_spring_strength = 0.2f;  // 1.0 A/rad
+    float idle_spring_smoothing = 0.1f; // 0.05 A per rad/s
+    float bumpstop_hardness = 0.3f;     // 1.5 A
+    float bumpstop_cushion = 0.15f;     // 0.3 A per rad/s
 };
 
 extern PersistedConfig g_config;

@@ -15,7 +15,9 @@ float IdleSpring::calculate(float position_rad, float velocity_rad_s, bool game_
     if (weight_ <= 0.0f)
         return 0.0f;
 
-    float torque = -g_config.idle_spring_stiffness * position_rad - g_config.idle_spring_damping * velocity_rad_s;
+    const float stiffness = std::clamp(g_config.idle_spring_strength, 0.0f, 1.0f) * kIdleSpringMaxStiffness;
+    const float damping = std::clamp(g_config.idle_spring_smoothing, 0.0f, 1.0f) * kIdleSpringMaxDamping;
+    float torque = -stiffness * position_rad - damping * velocity_rad_s;
     torque = std::clamp(torque, -g_config.max_current, g_config.max_current);
     return weight_ * torque;
 }

@@ -22,8 +22,8 @@ void BumpStop::updateLimits()
         transition_rad_ = 0.001f;
     inv_transition_rad_ = 1.0f / transition_rad_;
 
-    stiffness_ = g_config.bumpstop_stiffness;
-    damping_ = g_config.bumpstop_damping;
+    stiffness_ = std::clamp(g_config.bumpstop_hardness, 0.0f, 1.0f) * kBumpstopMaxStiffness;
+    damping_ = std::clamp(g_config.bumpstop_cushion, 0.0f, 1.0f) * kBumpstopMaxDamping;
 
     wall_start_pos_ = half_range_rad_ - transition_rad_;
     wall_start_neg_ = -half_range_rad_ + transition_rad_;

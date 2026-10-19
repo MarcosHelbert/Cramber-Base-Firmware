@@ -1,5 +1,7 @@
 #include "config_store.h"
 
+#include <algorithm>
+#include <cstddef>
 #include <cstring>
 
 #include <libopencm3/stm32/flash.h>
@@ -27,6 +29,16 @@ void ConfigStore::load()
         return;
 
     std::memcpy(&g_config, &stored->config, stored->size);
+
+    if (stored->size <= offsetof(PersistedConfig, idle_spring_strength))
+    {
+        auto fraction = [](float v, float max)
+        { return std::clamp(v / max, 0.0f, 1.0f); };
+        g_config.idle_spring_strength = fraction(g_config.idle_spring_stiffness, kIdleSpringMaxStiffness);
+        g_config.idle_spring_smoothing = fraction(g_config.idle_spring_damping, kIdleSpringMaxDamping);
+        g_config.bumpstop_hardness = fraction(g_config.bumpstop_stiffness, kBumpstopMaxStiffness);
+        g_config.bumpstop_cushion = fraction(g_config.bumpstop_damping, kBumpstopMaxDamping);
+    }
 }
 
 void ConfigStore::save()
