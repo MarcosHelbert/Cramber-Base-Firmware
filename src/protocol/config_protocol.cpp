@@ -49,9 +49,10 @@ namespace
 }
 
 ConfigProtocol::ConfigProtocol(Motor &motor, FOC &foc, DRV8301 &drv8301, Axis &axis, ConfigStore &config_store, FFBManager &ffb_manager,
-                               StartupSound &startup_sound, UserPrefsStore &user_prefs)
+                               StartupSound &startup_sound, UserPrefsStore &user_prefs,
+                               Telemetry &telemetry)
     : motor_(motor), foc_(foc), drv8301_(drv8301), axis_(axis), config_store_(config_store), ffb_manager_(ffb_manager),
-      startup_sound_(startup_sound), user_prefs_(user_prefs) {}
+      startup_sound_(startup_sound), user_prefs_(user_prefs), telemetry_(telemetry) {}
 
 void ConfigProtocol::init()
 {
@@ -203,6 +204,41 @@ void ConfigProtocol::hidSet(uint8_t report_id, uint8_t const *buffer, uint16_t b
         handleGet_(cmd);
         break;
 
+    case CMD_TELEMETRY:
+    {
+        if (!factory_mode_)
+        {
+            respond_(STATUS_ERR_ACCESS_DENIED, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
+            break;
+        }
+        const uint32_t now = millis();
+        switch (cmd.value[0])
+        {
+        case 1: // start
+        {
+            if (!telemetry_.start(cmd.param_id, g_config.pwm_freq_hz, now))
+            {
+                respond_(STATUS_ERR_INVALID_VALUE, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
+                break;
+            }
+            uint8_t rate[4];
+            packF32(rate, telemetry_.sampleRateHz());
+            respond_(STATUS_OK, cmd.command, cmd.param_id, VALUE_F32, rate, cmd.sequence);
+            break;
+        }
+        case 2: // keepalive
+            telemetry_.keepalive(now);
+            respond_(telemetry_.active() ? STATUS_OK : STATUS_ERR_BUSY, cmd.command, cmd.param_id, VALUE_NONE,
+                     nullptr, cmd.sequence);
+            break;
+        default: // stop
+            telemetry_.stop();
+            respond_(STATUS_OK, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
+            break;
+        }
+        break;
+    }
+
     case CMD_GET_DEFAULT:
     {
         uint8_t type = VALUE_NONE;
@@ -218,6 +254,8 @@ void ConfigProtocol::hidSet(uint8_t report_id, uint8_t const *buffer, uint16_t b
 
     case CMD_FACTORY_MODE:
         factory_mode_ = cmd.value[0] != 0;
+        if (!factory_mode_)
+            telemetry_.stop();
         if (factory_mode_)
             applyUserDefaults_();
         respond_(STATUS_OK, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);

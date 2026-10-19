@@ -25,6 +25,8 @@
 
 #include <protocol/config_protocol.h>
 
+#include <telemetry/telemetry.h>
+
 #include <system/timer.h>
 
 #include <usb/usb.h>
@@ -47,8 +49,9 @@ FOC foc = FOC(g_config, g_config.pwm_freq_hz);
 Motor motor = Motor(g_config, power_monitor, current_sensor, drv8301);
 Axis axis = Axis(motor, encoder, ffb_manager);
 StartupSound startup_sound = StartupSound(g_config);
+Telemetry telemetry;
 
-ConfigProtocol config_protocol = ConfigProtocol(motor, foc, drv8301, axis, config_store, ffb_manager, startup_sound, user_prefs);
+ConfigProtocol config_protocol = ConfigProtocol(motor, foc, drv8301, axis, config_store, ffb_manager, startup_sound, user_prefs, telemetry);
 
 USB usb;
 
@@ -81,6 +84,7 @@ static void usb_task(void *arg)
         }
         usb.update();
         config_protocol.poll();
+        telemetry.poll(millis());
 
         vTaskDelayUntil(&lastWakeTime, period);
     }
@@ -235,6 +239,26 @@ extern "C" void tim1_cc_isr(void)
     if (g_config.brake_resistor_enabled)
     {
         brake_resistor.update(vbus, previous_ibus);
+    }
+
+    if (telemetry.due())
+    {
+        const float values[TLM_COUNT] = {
+            current_sensor.getIa(),
+            current_sensor.getIb(),
+            current_sensor.getIc(),
+            foc.getId(),
+            foc.getIq(),
+            axis.getIqTarget(),
+            foc.getVd(),
+            foc.getVq(),
+            vbus,
+            previous_ibus,
+            axis.getElectricalAngle(),
+            encoder.angle() * (180.0f / 3.14159265f),
+            encoder.velocity(),
+        };
+        telemetry.push(values);
     }
 
     Motor::MotorState motor_state = motor.getState();

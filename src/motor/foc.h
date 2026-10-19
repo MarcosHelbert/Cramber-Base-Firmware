@@ -23,6 +23,8 @@ public:
     float getVc() const { return vc_; }
 
     float getId() const { return id_; }
+    float getVd() const { return vd_; }
+    float getVq() const { return vq_; }
     float getIq() const { return iq_; }
 
     float getModD(float vbus) const { return (vbus > 0.0f) ? (vd_ / (vbus * INV_SQRT3)) : 0.0f; }

@@ -116,7 +116,7 @@ uint8_t const desc_configuration[] = {
                        CFG_TUD_HID_EP_BUFSIZE, 8),
     TUD_HID_DESCRIPTOR(ITF_NUM_VENDOR, 5, HID_ITF_PROTOCOL_NONE,
                        sizeof(desc_hid_report_vendor), EPNUM_VENDOR,
-                       CFG_TUD_HID_EP_BUFSIZE, 8),
+                       CFG_TUD_HID_EP_BUFSIZE, 1),
 #endif
 };
 

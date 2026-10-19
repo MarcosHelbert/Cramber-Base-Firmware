@@ -11,6 +11,7 @@
 #include <motor/startup_sound.h>
 #include <persistence/config_store.h>
 #include <persistence/user_prefs_store.h>
+#include <telemetry/telemetry.h>
 
 static constexpr uint32_t kFirmwareVersion = 1;
 
@@ -30,6 +31,7 @@ enum ConfigCommand : uint8_t
     CMD_CLEAR_FAULT = 0x08,
     CMD_FACTORY_MODE = 0x09,
     CMD_GET_DEFAULT = 0x0A,
+    CMD_TELEMETRY = 0x0B,
 };
 
 enum ConfigStatus : uint8_t
@@ -216,7 +218,8 @@ class ConfigProtocol
 {
 public:
     ConfigProtocol(Motor &motor, FOC &foc, DRV8301 &drv8301, Axis &axis, ConfigStore &config_store, FFBManager &ffb_manager,
-                   StartupSound &startup_sound, UserPrefsStore &user_prefs);
+                   StartupSound &startup_sound, UserPrefsStore &user_prefs,
+                   Telemetry &telemetry);
 
     void init();
     void hidSet(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize);
@@ -233,6 +236,7 @@ private:
     FFBManager &ffb_manager_;
     StartupSound &startup_sound_;
     UserPrefsStore &user_prefs_;
+    Telemetry &telemetry_;
 
     enum class ParamScope
     {

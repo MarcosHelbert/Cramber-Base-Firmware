@@ -26,6 +26,15 @@ uint8_t const desc_hid_report_vendor[] = {
     0x95, 0x10, //   REPORT_COUNT (16)
     0x81, 0x02, //   INPUT (Data,Var,Abs)
 
+    // Report ID 25: Telemetry stream (device -> host, 63 bytes, interrupt IN)
+    0x85, 0x19, //   REPORT_ID (25)
+    0x09, 0x04, //   USAGE (Vendor Usage 4)
+    0x15, 0x00, //   LOGICAL_MINIMUM (0)
+    0x26, 0xFF, 0x00, //   LOGICAL_MAXIMUM (255)
+    0x75, 0x08, //   REPORT_SIZE (8)
+    0x95, 0x3F, //   REPORT_COUNT (63)
+    0x81, 0x02, //   INPUT (Data,Var,Abs)
+
     0xC0, // END_COLLECTION
 };
 
