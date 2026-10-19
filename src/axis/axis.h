@@ -6,6 +6,7 @@
 #include <encoder/encoder.h>
 #include <ffb/bumpstop.h>
 #include <ffb/idle_spring.h>
+#include <ffb/natural_effects.h>
 #include <ffb/ffb_manager.h>
 #include <motor/motor.h>
 #include <persistence/config_store.h>
@@ -93,6 +94,7 @@ public:
         if (running)
         {
             iq_prev_ = 0.0f;
+            game_torque_filtered_ = 0.0f;
             idle_spring_.reset();
         }
         state_ = running ? State::RUNNING : State::IDLE;
@@ -115,6 +117,8 @@ public:
 
     bool isPositionReferenced() const { return !g_config.use_index_z || encoder_.isIndexed(); }
 
+    float getWheelAngleRad() const { return isPositionReferenced() ? encoder_.angle() : 0.0f; }
+
 private:
     float smoothstepRamp_(float elapsed_s, float duration_s) const;
     float lutCorrection_(int32_t position_counts) const;
@@ -127,6 +131,8 @@ private:
     FFBManager &ffb_manager_;
     BumpStop bumpstop_;
     IdleSpring idle_spring_;
+    NaturalEffects natural_effects_;
+    float game_torque_filtered_ = 0.0f;
 
     State state_ = State::IDLE;
     float iq_prev_ = 0.0f;

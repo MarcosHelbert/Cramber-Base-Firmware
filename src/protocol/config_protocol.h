@@ -125,6 +125,11 @@ enum ConfigParamId : uint16_t
     PARAM_IDLE_SPRING_ENABLED = 0x0C03,
     PARAM_IDLE_SPRING_STIFFNESS = 0x0C04,
     PARAM_IDLE_SPRING_DAMPING = 0x0C05,
+    PARAM_FFB_GAIN = 0x0C06,
+    PARAM_FFB_DETAIL = 0x0C07,
+    PARAM_NATURAL_DAMPING = 0x0C08,
+    PARAM_NATURAL_FRICTION = 0x0C09,
+    PARAM_NATURAL_INERTIA = 0x0C0A,
 
     // 0x0D00-0x0DFF: bumpstop (virtual end-of-travel wall)
     PARAM_BUMPSTOP_ENABLED = 0x0D00,
@@ -164,6 +169,7 @@ enum ConfigParamId : uint16_t
     PARAM_SOUND_PEAK_VOLTAGE = 0xFF11,
     PARAM_SOUND_PEAK_CURRENT = 0xFF12,
     PARAM_GAME_FFB_ACTIVE = 0xFF13,
+    PARAM_WHEEL_ANGLE_DEG = 0xFF14,
 };
 
 // Raw 16-byte OUT report layout:
@@ -245,6 +251,11 @@ private:
         float bumpstop_damping;
         float idle_spring_stiffness;
         float idle_spring_damping;
+        float ffb_gain;
+        float ffb_detail;
+        float natural_damping;
+        float natural_friction;
+        float natural_inertia;
     };
     void captureUserDefaults_();
     void applyUserDefaults_();

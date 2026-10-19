@@ -69,7 +69,11 @@ ConfigProtocol::ParamScope ConfigProtocol::scopeOf_(uint16_t param_id)
     case PARAM_BUMPSTOP_DAMPING:
     case PARAM_IDLE_SPRING_STIFFNESS:
     case PARAM_IDLE_SPRING_DAMPING:
-    case PARAM_FFB_ACTIVE:
+    case PARAM_FFB_GAIN:
+    case PARAM_FFB_DETAIL:
+    case PARAM_NATURAL_DAMPING:
+    case PARAM_NATURAL_FRICTION:
+    case PARAM_NATURAL_INERTIA:
     case PARAM_STARTUP_SOUND_PLAY:
         return ParamScope::USER;
 
@@ -89,6 +93,8 @@ ConfigProtocol::ParamScope ConfigProtocol::scopeOf_(uint16_t param_id)
     case PARAM_DRV_HAS_FAULT:
     case PARAM_ARM_FAIL_REASON:
     case PARAM_GAME_FFB_ACTIVE:
+    case PARAM_WHEEL_ANGLE_DEG:
+    case PARAM_FFB_ACTIVE:
         return ParamScope::STATUS;
 
     default:
@@ -106,6 +112,11 @@ void ConfigProtocol::captureUserDefaults_()
     user_defaults_.bumpstop_damping = c.bumpstop_damping;
     user_defaults_.idle_spring_stiffness = c.idle_spring_stiffness;
     user_defaults_.idle_spring_damping = c.idle_spring_damping;
+    user_defaults_.ffb_gain = c.ffb_gain;
+    user_defaults_.ffb_detail = c.ffb_detail;
+    user_defaults_.natural_damping = c.natural_damping;
+    user_defaults_.natural_friction = c.natural_friction;
+    user_defaults_.natural_inertia = c.natural_inertia;
 }
 
 void ConfigProtocol::applyUserDefaults_()
@@ -118,6 +129,11 @@ void ConfigProtocol::applyUserDefaults_()
     c.bumpstop_damping = user_defaults_.bumpstop_damping;
     c.idle_spring_stiffness = user_defaults_.idle_spring_stiffness;
     c.idle_spring_damping = user_defaults_.idle_spring_damping;
+    c.ffb_gain = user_defaults_.ffb_gain;
+    c.ffb_detail = user_defaults_.ffb_detail;
+    c.natural_damping = user_defaults_.natural_damping;
+    c.natural_friction = user_defaults_.natural_friction;
+    c.natural_inertia = user_defaults_.natural_inertia;
     axis_.initBumpstop();
 }
 
@@ -235,7 +251,7 @@ void ConfigProtocol::handleGet_(const ConfigCommandReport &cmd)
 
 void ConfigProtocol::handleCalibrate_(const ConfigCommandReport &cmd)
 {
-    if (!factory_mode_ && cmd.param_id != PARAM_CALTYPE_HOME)
+    if (!factory_mode_)
     {
         respond_(STATUS_ERR_ACCESS_DENIED, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
         return;
@@ -730,6 +746,26 @@ bool ConfigProtocol::readParam_(uint16_t param_id, uint8_t &out_type, uint8_t ou
         out_type = VALUE_F32;
         packF32(out_value, c.idle_spring_damping);
         return true;
+    case PARAM_FFB_GAIN:
+        out_type = VALUE_F32;
+        packF32(out_value, c.ffb_gain);
+        return true;
+    case PARAM_FFB_DETAIL:
+        out_type = VALUE_F32;
+        packF32(out_value, c.ffb_detail);
+        return true;
+    case PARAM_NATURAL_DAMPING:
+        out_type = VALUE_F32;
+        packF32(out_value, c.natural_damping);
+        return true;
+    case PARAM_NATURAL_FRICTION:
+        out_type = VALUE_F32;
+        packF32(out_value, c.natural_friction);
+        return true;
+    case PARAM_NATURAL_INERTIA:
+        out_type = VALUE_F32;
+        packF32(out_value, c.natural_inertia);
+        return true;
 
     case PARAM_BUMPSTOP_ENABLED:
         out_type = VALUE_BOOL;
@@ -832,6 +868,10 @@ bool ConfigProtocol::readParam_(uint16_t param_id, uint8_t &out_type, uint8_t ou
     case PARAM_GAME_FFB_ACTIVE:
         out_type = VALUE_BOOL;
         packBool(out_value, ffb_manager_.isGameDriving(millis()));
+        return true;
+    case PARAM_WHEEL_ANGLE_DEG:
+        out_type = VALUE_F32;
+        packF32(out_value, axis_.getWheelAngleRad() * (180.0f / 3.14159265f));
         return true;
     case PARAM_ANTICOGGING_FAIL_REASON:
         out_type = VALUE_U32;
@@ -1032,11 +1072,16 @@ uint8_t ConfigProtocol::writeParam_(uint16_t param_id, uint8_t type, const uint8
         c.max_acceleration_rad_s2 = unpackF32(value);
         return STATUS_OK;
     case PARAM_STEERING_RANGE_DEG:
+    {
         if (type != VALUE_F32)
             return STATUS_ERR_UNKNOWN_PARAM;
-        c.steering_range_deg = unpackF32(value);
+        const float range = unpackF32(value);
+        if (!(range >= 90.0f && range <= 2700.0f))
+            return STATUS_ERR_INVALID_VALUE;
+        c.steering_range_deg = range;
         axis_.initBumpstop();
         return STATUS_OK;
+    }
 
     case PARAM_BRAKE_RESISTOR_ENABLED:
         if (type != VALUE_BOOL)
@@ -1131,6 +1176,56 @@ uint8_t ConfigProtocol::writeParam_(uint16_t param_id, uint8_t type, const uint8
             return STATUS_ERR_UNKNOWN_PARAM;
         c.idle_spring_damping = unpackF32(value);
         return STATUS_OK;
+    case PARAM_FFB_GAIN:
+    {
+        if (type != VALUE_F32)
+            return STATUS_ERR_UNKNOWN_PARAM;
+        const float v = unpackF32(value);
+        if (v < 0.0f || v > 1.0f)
+            return STATUS_ERR_INVALID_VALUE;
+        c.ffb_gain = v;
+        return STATUS_OK;
+    }
+    case PARAM_FFB_DETAIL:
+    {
+        if (type != VALUE_F32)
+            return STATUS_ERR_UNKNOWN_PARAM;
+        const float v = unpackF32(value);
+        if (v < 0.0f || v > 1.0f)
+            return STATUS_ERR_INVALID_VALUE;
+        c.ffb_detail = v;
+        return STATUS_OK;
+    }
+    case PARAM_NATURAL_DAMPING:
+    {
+        if (type != VALUE_F32)
+            return STATUS_ERR_UNKNOWN_PARAM;
+        const float v = unpackF32(value);
+        if (v < 0.0f || v > 1.0f)
+            return STATUS_ERR_INVALID_VALUE;
+        c.natural_damping = v;
+        return STATUS_OK;
+    }
+    case PARAM_NATURAL_FRICTION:
+    {
+        if (type != VALUE_F32)
+            return STATUS_ERR_UNKNOWN_PARAM;
+        const float v = unpackF32(value);
+        if (v < 0.0f || v > 1.0f)
+            return STATUS_ERR_INVALID_VALUE;
+        c.natural_friction = v;
+        return STATUS_OK;
+    }
+    case PARAM_NATURAL_INERTIA:
+    {
+        if (type != VALUE_F32)
+            return STATUS_ERR_UNKNOWN_PARAM;
+        const float v = unpackF32(value);
+        if (v < 0.0f || v > 1.0f)
+            return STATUS_ERR_INVALID_VALUE;
+        c.natural_inertia = v;
+        return STATUS_OK;
+    }
 
     case PARAM_BUMPSTOP_ENABLED:
         if (type != VALUE_BOOL)

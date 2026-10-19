@@ -45,10 +45,7 @@ float BumpStop::calculate(float position_rad, float velocity_rad_s) const
         x = std::clamp(x, 0.0f, 1.0f);
 
         float spring = stiffness_ * (x + 0.5f * cube(x));
-
-        float damping_gain = 0.2f + 0.8f * x;
-        float damping = damping_ * damping_gain * velocity_rad_s;
-
+        float damping = damping_ * velocity_rad_s;
         torque = -spring - damping;
     }
     else if (position_rad < wall_start_neg_)
@@ -58,17 +55,8 @@ float BumpStop::calculate(float position_rad, float velocity_rad_s) const
         x = std::clamp(x, 0.0f, 1.0f);
 
         float spring = stiffness_ * (x + 0.5f * cube(x));
-
-        float damping_gain = 0.2f + 0.8f * x;
-        float damping = damping_ * damping_gain * velocity_rad_s;
-
+        float damping = damping_ * velocity_rad_s;
         torque = spring - damping;
-    }
-
-    if (std::abs(velocity_rad_s) < 0.3f && torque != 0.0f)
-    {
-        float sign = (torque > 0.0f) ? 1.0f : -1.0f;
-        torque -= 0.02f * sign;
     }
 
     return std::clamp(torque, -torque_clamp_, torque_clamp_);

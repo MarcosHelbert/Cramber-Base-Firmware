@@ -85,10 +85,17 @@ struct PersistedConfig
     bool startup_sound_enabled = true;   // Play the startup melody through the motor at boot
     float startup_sound_volume_a = 0.5f; // Tone current amplitude (A)
 
-    // --- Idle spring (centering while no game drives the wheel) ---
+    // --- Idle spring ---
     bool idle_spring_enabled = true;
     float idle_spring_stiffness = 1.0f; // A per rad
     float idle_spring_damping = 0.05f;  // A per rad/s
+
+    // --- Game FFB shaping and natural effects ---
+    float ffb_gain = 1.0f;         // Scales the game's force feedback only
+    float ffb_detail = 1.0f;       // 1 = unfiltered; lower = smoother
+    float natural_damping = 0.0f;  // Resists wheel speed
+    float natural_friction = 0.0f; // Constant drag
+    float natural_inertia = 0.0f;  // Resists acceleration
 };
 
 extern PersistedConfig g_config;

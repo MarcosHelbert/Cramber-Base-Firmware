@@ -1,6 +1,7 @@
 #include "axis.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include <utils.h>
 #include <FastMath.h>
@@ -179,23 +180,38 @@ void Axis::update(float dt)
         float velocity = encoder_.velocity();
         float acceleration = encoder_.acceleration();
 
-        float torque = ffb_manager_.getTorque(position_rad, velocity, acceleration, millis());
-        torque += bumpstop_.calculate(position_rad, velocity);
-        torque += idle_spring_.calculate(position_rad, velocity, ffb_manager_.isGameDriving(millis()), dt);
+        float game_torque = ffb_manager_.getTorque(position_rad, velocity, acceleration, millis()) * std::clamp(g_config.ffb_gain, 0.0f, 1.0f);
+        const float detail = std::clamp(g_config.ffb_detail, 0.0f, 1.0f);
+        if (detail >= 0.999f)
+        {
+            game_torque_filtered_ = game_torque;
+        }
+        else
+        {
+            constexpr float kMinCutoffHz = 10.0f;
+            constexpr float kMaxCutoffHz = 500.0f;
+            const float cutoff_hz = kMinCutoffHz * std::pow(kMaxCutoffHz / kMinCutoffHz, detail);
+            const float alpha = 1.0f - std::exp(-TWO_PI * cutoff_hz * dt);
+            game_torque_filtered_ += alpha * (game_torque - game_torque_filtered_);
+        }
 
+        float shaped = game_torque_filtered_;
+        shaped += natural_effects_.calculate(velocity, acceleration);
+        shaped += idle_spring_.calculate(position_rad, velocity, ffb_manager_.isGameDriving(millis()), dt);
+        shaped = std::clamp(shaped, -g_config.max_current, g_config.max_current);
+
+        float delta = shaped - iq_prev_;
+        delta = std::clamp(delta, -max_step, max_step);
+        iq_prev_ += delta;
+
+        float torque = iq_prev_ + bumpstop_.calculate(position_rad, velocity);
         if (g_config.anticogging_enabled && g_config.anticogging_calibrated)
         {
             torque += anticoggingCorrection_(encoder_.positionCounts());
         }
 
-        torque = std::clamp(torque, -g_config.max_current, g_config.max_current);
-
-        float delta = torque - iq_prev_;
-        delta = std::clamp(delta, -max_step, max_step);
-        iq_prev_ += delta;
-
         id_target_ = 0.0f;
-        iq_target_ = iq_prev_;
+        iq_target_ = std::clamp(torque, -g_config.max_current, g_config.max_current);
         return;
     }
 
