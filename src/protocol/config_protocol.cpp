@@ -102,6 +102,54 @@ ConfigProtocol::ParamScope ConfigProtocol::scopeOf_(uint16_t param_id)
     }
 }
 
+bool ConfigProtocol::readUserDefault_(uint16_t param_id, uint8_t &out_type, uint8_t out_value[4]) const
+{
+    const UserDefaults &d = user_defaults_;
+    out_type = VALUE_F32;
+    switch (param_id)
+    {
+    case PARAM_STEERING_RANGE_DEG:
+        packF32(out_value, d.steering_range_deg);
+        return true;
+    case PARAM_BUMPSTOP_ENABLED:
+        out_type = VALUE_BOOL;
+        packBool(out_value, d.bumpstop_enabled);
+        return true;
+    case PARAM_BUMPSTOP_RANGE_DEG:
+        packF32(out_value, d.bumpstop_range_deg);
+        return true;
+    case PARAM_BUMPSTOP_STIFFNESS:
+        packF32(out_value, d.bumpstop_stiffness);
+        return true;
+    case PARAM_BUMPSTOP_DAMPING:
+        packF32(out_value, d.bumpstop_damping);
+        return true;
+    case PARAM_IDLE_SPRING_STIFFNESS:
+        packF32(out_value, d.idle_spring_stiffness);
+        return true;
+    case PARAM_IDLE_SPRING_DAMPING:
+        packF32(out_value, d.idle_spring_damping);
+        return true;
+    case PARAM_FFB_GAIN:
+        packF32(out_value, d.ffb_gain);
+        return true;
+    case PARAM_FFB_DETAIL:
+        packF32(out_value, d.ffb_detail);
+        return true;
+    case PARAM_NATURAL_DAMPING:
+        packF32(out_value, d.natural_damping);
+        return true;
+    case PARAM_NATURAL_FRICTION:
+        packF32(out_value, d.natural_friction);
+        return true;
+    case PARAM_NATURAL_INERTIA:
+        packF32(out_value, d.natural_inertia);
+        return true;
+    default:
+        return false;
+    }
+}
+
 void ConfigProtocol::captureUserDefaults_()
 {
     const PersistedConfig &c = g_config;
@@ -154,6 +202,19 @@ void ConfigProtocol::hidSet(uint8_t report_id, uint8_t const *buffer, uint16_t b
     case CMD_GET:
         handleGet_(cmd);
         break;
+
+    case CMD_GET_DEFAULT:
+    {
+        uint8_t type = VALUE_NONE;
+        uint8_t value[4] = {0};
+        if (!readUserDefault_(cmd.param_id, type, value))
+        {
+            respond_(STATUS_ERR_UNKNOWN_PARAM, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
+            break;
+        }
+        respond_(STATUS_OK, cmd.command, cmd.param_id, type, value, cmd.sequence);
+        break;
+    }
 
     case CMD_FACTORY_MODE:
         factory_mode_ = cmd.value[0] != 0;

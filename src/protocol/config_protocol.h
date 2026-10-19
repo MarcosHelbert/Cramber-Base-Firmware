@@ -29,6 +29,7 @@ enum ConfigCommand : uint8_t
     CMD_REBOOT = 0x07,
     CMD_CLEAR_FAULT = 0x08,
     CMD_FACTORY_MODE = 0x09,
+    CMD_GET_DEFAULT = 0x0A,
 };
 
 enum ConfigStatus : uint8_t
@@ -258,6 +259,7 @@ private:
         float natural_inertia;
     };
     void captureUserDefaults_();
+    bool readUserDefault_(uint16_t param_id, uint8_t &out_type, uint8_t out_value[4]) const;
     void applyUserDefaults_();
 
     bool factory_mode_ = false;
