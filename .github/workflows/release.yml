@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            .pio/libdeps
+            bootloader/.pio/libdeps
+          key: platformio-${{ hashFiles('platformio.ini', 'bootloader/platformio.ini') }}
+
+      - run: pip install platformio
+
+      - name: Check the tag against kFirmwareVersion
+        run: |
+          version=$(sed -n 's/.*kFirmwareVersion = \([0-9]\+\);.*/\1/p' src/protocol/config_protocol.h)
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} doesn't match kFirmwareVersion = ${version} (expected v${version})"
+            exit 1
+          fi
+
+      - name: Build the full firmware
+        run: pio run -e genericSTM32F405RG_release -t build_full_firmware
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Cramber DD firmware ${{ github.ref_name }}
+          body: |
+            `cramber-dd-${{ github.ref_name }}.bin` contains the bootloader and the application.
+
+            - **Cramber Hub:** Wheel Base → System → Update firmware, and pick this file.
+            - **ST-Link:** flash it at `0x08000000` (needed once on a new board).
+
+            Calibration and settings on the base are kept.
+          draft: true
+          files: .pio/build/genericSTM32F405RG_release/cramber-dd-v*.bin
