@@ -19,7 +19,8 @@ public:
 
     void init();
     void start();
-    void update();
+    void handleEvents();
+    void sendReports();
 
     void setAxis(float position_rad, float steering_range_deg);
 

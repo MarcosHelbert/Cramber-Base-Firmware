@@ -56,10 +56,13 @@ void USB::start()
     OTG_FS_DCTL &= ~OTG_DCTL_SDIS;
 }
 
-void USB::update()
+void USB::handleEvents()
 {
-    tud_task();
+    tud_task_ext(0, false);
+}
 
+void USB::sendReports()
+{
 #ifdef DEBUG
     cdcLogFlush();
 #endif

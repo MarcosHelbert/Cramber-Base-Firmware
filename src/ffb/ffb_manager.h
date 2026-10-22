@@ -39,6 +39,11 @@ public:
 
     float getTorque(float positionRad, float velocityRadS, float accelerationRadS2, uint32_t nowMs);
 
+    void tickStats(uint32_t nowMs);
+    uint16_t reportRateHz() const { return reportRate_; }
+    uint16_t forceRateHz() const { return forceRate_; }
+    uint32_t maxForceGapUs() const { return maxForceGap_; }
+
 private:
     bool isValidIndex_(uint8_t index) const { return index > 0 && index <= effects_.size(); }
     void updateBlockLoad_(uint8_t index, uint8_t status);
@@ -74,6 +79,15 @@ private:
     uint16_t usedEffects_ = 0;
     uint32_t activeMask_ = 0;
     volatile uint32_t lastHostReportMs_ = 0;
+
+    uint16_t reportCount_ = 0;
+    uint16_t forceCount_ = 0;
+    uint32_t lastForceUs_ = 0;
+    uint32_t windowMaxGap_ = 0;
+    uint32_t windowStartMs_ = 0;
+    uint16_t reportRate_ = 0;
+    uint16_t forceRate_ = 0;
+    uint32_t maxForceGap_ = 0;
 
     BlockLoad_Data blockLoad_{};
     PIDPool_Data pool_{};

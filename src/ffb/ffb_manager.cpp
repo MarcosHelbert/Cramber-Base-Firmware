@@ -76,6 +76,7 @@ void FFBManager::hidSet(uint8_t report_id, uint8_t const *buffer, uint16_t bufsi
         return;
 
     lastHostReportMs_ = millis();
+    reportCount_++;
 
     cdcLog("report_id=%u bufsize=%u\n", report_id, bufsize);
 
@@ -124,6 +125,12 @@ void FFBManager::hidSet(uint8_t report_id, uint8_t const *buffer, uint16_t bufsi
 
     case 0x05: // Set Constant Force
     {
+        const uint32_t now = micros();
+        if (forceCount_ > 0 && now - lastForceUs_ > windowMaxGap_)
+            windowMaxGap_ = now - lastForceUs_;
+        lastForceUs_ = now;
+        forceCount_++;
+
         SetConstantForce_Data d{};
         if (decodeReport(buffer, bufsize, &d))
             setConstantForce_(&d);
@@ -551,4 +558,17 @@ void FFBManager::updateBlockLoad_(uint8_t index, uint8_t status)
     blockLoad_.effectBlockIndex = index;
     blockLoad_.ramPoolAvailable = effects_.size() - usedEffects_;
     blockLoad_.loadStatus = status;
+}
+
+void FFBManager::tickStats(uint32_t nowMs)
+{
+    if (nowMs - windowStartMs_ < 1000)
+        return;
+    reportRate_ = reportCount_;
+    forceRate_ = forceCount_;
+    maxForceGap_ = forceCount_ > 1 ? windowMaxGap_ : 0;
+    reportCount_ = 0;
+    forceCount_ = 0;
+    windowMaxGap_ = 0;
+    windowStartMs_ = nowMs;
 }

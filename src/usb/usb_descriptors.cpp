@@ -60,11 +60,12 @@ enum
 };
 
 #define EPNUM_JOYSTICK 0x81
+#define EPNUM_JOYSTICK_OUT 0x01
 #define EPNUM_CDC_NOTIF 0x82
 #define EPNUM_CDC_IN 0x83
 #define EPNUM_CDC_OUT 0x03
 
-#define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN + TUD_CDC_DESC_LEN)
+#define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_HID_INOUT_DESC_LEN + TUD_CDC_DESC_LEN)
 
 #else
 enum
@@ -75,9 +76,10 @@ enum
 };
 
 #define EPNUM_JOYSTICK 0x81
+#define EPNUM_JOYSTICK_OUT 0x01
 #define EPNUM_VENDOR 0x82
 
-#define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + (2 * TUD_HID_DESC_LEN))
+#define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_HID_INOUT_DESC_LEN + TUD_HID_DESC_LEN)
 #endif
 
 //--------------------------------------------------------------------+
@@ -105,15 +107,15 @@ uint8_t const desc_configuration[] = {
                           TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 500),
 
 #ifdef DEBUG
-    TUD_HID_DESCRIPTOR(ITF_NUM_JOYSTICK, 0, HID_ITF_PROTOCOL_NONE,
-                       sizeof(desc_hid_report_joystick), EPNUM_JOYSTICK,
-                       CFG_TUD_HID_EP_BUFSIZE, 1),
+    TUD_HID_INOUT_DESCRIPTOR(ITF_NUM_JOYSTICK, 0, HID_ITF_PROTOCOL_NONE,
+                             sizeof(desc_hid_report_joystick), EPNUM_JOYSTICK_OUT, EPNUM_JOYSTICK,
+                             CFG_TUD_HID_EP_BUFSIZE, 1),
     TUD_CDC_DESCRIPTOR(ITF_NUM_CDC_CTRL, 4, EPNUM_CDC_NOTIF, 8,
                        EPNUM_CDC_OUT, EPNUM_CDC_IN, 64),
 #else
-    TUD_HID_DESCRIPTOR(ITF_NUM_JOYSTICK, 4, HID_ITF_PROTOCOL_NONE,
-                       sizeof(desc_hid_report_joystick), EPNUM_JOYSTICK,
-                       CFG_TUD_HID_EP_BUFSIZE, 1),
+    TUD_HID_INOUT_DESCRIPTOR(ITF_NUM_JOYSTICK, 4, HID_ITF_PROTOCOL_NONE,
+                             sizeof(desc_hid_report_joystick), EPNUM_JOYSTICK_OUT, EPNUM_JOYSTICK,
+                             CFG_TUD_HID_EP_BUFSIZE, 1),
     TUD_HID_DESCRIPTOR(ITF_NUM_VENDOR, 5, HID_ITF_PROTOCOL_NONE,
                        sizeof(desc_hid_report_vendor), EPNUM_VENDOR,
                        CFG_TUD_HID_EP_BUFSIZE, 1),
@@ -190,6 +192,15 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
 
     if (!buffer || bufsize == 0)
         return;
+
+    if (report_id == 0 && report_type == HID_REPORT_TYPE_OUTPUT)
+    {
+        if (bufsize < 2)
+            return;
+        report_id = buffer[0];
+        buffer++;
+        bufsize--;
+    }
 
 #ifndef DEBUG
     if (itf == ITF_NUM_VENDOR)

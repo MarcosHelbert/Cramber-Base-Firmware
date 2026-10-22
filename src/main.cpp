@@ -62,31 +62,62 @@ static void watchdog_init_()
     iwdg_reset();
 }
 
+static TaskHandle_t usb_task_handle = nullptr;
+
+extern "C" void tud_event_hook_cb(uint8_t rhport, uint32_t eventid, bool in_isr)
+{
+    (void)rhport;
+    (void)eventid;
+    if (usb_task_handle == nullptr)
+        return;
+    if (in_isr)
+    {
+        BaseType_t woken = pdFALSE;
+        vTaskNotifyGiveFromISR(usb_task_handle, &woken);
+        portYIELD_FROM_ISR(woken);
+    }
+    else
+    {
+        xTaskNotifyGive(usb_task_handle);
+    }
+}
+
 static void usb_task(void *arg)
 {
     (void)arg;
 
+    usb_task_handle = xTaskGetCurrentTaskHandle();
     usb.start();
 
-    TickType_t lastWakeTime = xTaskGetTickCount();
     const TickType_t period = pdMS_TO_TICKS(1); // 1 kHz
+    TickType_t next = xTaskGetTickCount();
 
     while (1)
     {
-        iwdg_reset();
-        if (axis.getState() == Axis::State::RUNNING)
-        {
-            usb.setAxis(encoder.angle(), g_config.steering_range_deg);
-        }
-        else
-        {
-            usb.setAxis(0.0f, g_config.steering_range_deg);
-        }
-        usb.update();
-        config_protocol.poll();
-        telemetry.poll(millis());
+        usb.handleEvents();
 
-        vTaskDelayUntil(&lastWakeTime, period);
+        const TickType_t now = xTaskGetTickCount();
+        if (static_cast<int32_t>(now - next) >= 0)
+        {
+            next = now + period;
+
+            iwdg_reset();
+            if (axis.getState() == Axis::State::RUNNING)
+            {
+                usb.setAxis(encoder.angle(), g_config.steering_range_deg);
+            }
+            else
+            {
+                usb.setAxis(0.0f, g_config.steering_range_deg);
+            }
+            usb.sendReports();
+            ffb_manager.tickStats(millis());
+            config_protocol.poll();
+            telemetry.poll(millis());
+        }
+
+        const int32_t wait = static_cast<int32_t>(next - xTaskGetTickCount());
+        ulTaskNotifyTake(pdTRUE, wait > 0 ? static_cast<TickType_t>(wait) : 0);
     }
 }
 

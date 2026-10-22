@@ -97,6 +97,9 @@ ConfigProtocol::ParamScope ConfigProtocol::scopeOf_(uint16_t param_id)
     case PARAM_ARM_FAIL_REASON:
     case PARAM_GAME_FFB_ACTIVE:
     case PARAM_WHEEL_ANGLE_DEG:
+    case PARAM_FFB_REPORT_RATE_HZ:
+    case PARAM_FFB_FORCE_RATE_HZ:
+    case PARAM_FFB_MAX_FORCE_GAP_US:
     case PARAM_FFB_ACTIVE:
         return ParamScope::STATUS;
 
@@ -988,6 +991,18 @@ bool ConfigProtocol::readParam_(uint16_t param_id, uint8_t &out_type, uint8_t ou
     case PARAM_WHEEL_ANGLE_DEG:
         out_type = VALUE_F32;
         packF32(out_value, axis_.getWheelAngleRad() * (180.0f / 3.14159265f));
+        return true;
+    case PARAM_FFB_REPORT_RATE_HZ:
+        out_type = VALUE_U32;
+        packU32(out_value, ffb_manager_.reportRateHz());
+        return true;
+    case PARAM_FFB_FORCE_RATE_HZ:
+        out_type = VALUE_U32;
+        packU32(out_value, ffb_manager_.forceRateHz());
+        return true;
+    case PARAM_FFB_MAX_FORCE_GAP_US:
+        out_type = VALUE_U32;
+        packU32(out_value, ffb_manager_.maxForceGapUs());
         return true;
     case PARAM_ANTICOGGING_FAIL_REASON:
         out_type = VALUE_U32;
