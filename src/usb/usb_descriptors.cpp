@@ -1,3 +1,4 @@
+#include <libopencm3/stm32/memorymap.h>
 #include <tusb.h>
 
 #include <ffb_hid_report.h>
@@ -135,7 +136,7 @@ char const *string_desc_arr[] = {
     (const char[]){0x09, 0x04}, // 0: Supported language is English (0x0409)
     "Cramber",                  // 1: Manufacturer
     "Cramber DD",               // 2: Product
-    "CRAMBER-DD-2026-001",      // 3: Serials,
+    nullptr,                    // 3: Serial, built from the chip's unique ID (see serialNumber_)
 #ifdef DEBUG
     "Cramber Debug Interface", // 4: CDC Interface
 #else
@@ -143,6 +144,31 @@ char const *string_desc_arr[] = {
     "Vendor Config Interface", // 5: Vendor Interface
 #endif
 };
+
+static const char *serialNumber_()
+{
+    static char serial[] = "CRAMBER-DD-000000000000";
+    static bool built = false;
+    if (!built)
+    {
+        const uint32_t words[3] = {DESIG_UNIQUE_ID0, DESIG_UNIQUE_ID1, DESIG_UNIQUE_ID2};
+        uint64_t hash = 0xcbf29ce484222325ull;
+        for (uint32_t word : words)
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                hash ^= (word >> (8 * i)) & 0xFFu;
+                hash *= 0x100000001b3ull;
+            }
+        }
+        static const char kHex[] = "0123456789ABCDEF";
+        constexpr int kPrefix = 11; // "CRAMBER-DD-"
+        for (int i = 0; i < 12; i++)
+            serial[kPrefix + i] = kHex[(hash >> (4 * (11 - i))) & 0xFu];
+        built = true;
+    }
+    return serial;
+}
 
 static uint16_t _desc_str[32];
 uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid)
@@ -158,7 +184,7 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid)
     {
         if (index >= sizeof(string_desc_arr) / sizeof(string_desc_arr[0]))
             return NULL;
-        const char *str = string_desc_arr[index];
+        const char *str = index == 3 ? serialNumber_() : string_desc_arr[index];
         chr_count = strlen(str);
         if (chr_count > 31)
             chr_count = 31;
