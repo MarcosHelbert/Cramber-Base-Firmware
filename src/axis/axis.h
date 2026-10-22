@@ -167,6 +167,13 @@ private:
     float homing_settle_time_s_ = 0.0f;
     float homing_electrical_angle_ = 0.0f;
 
+    bool centering_ = false;
+    float centering_time_s_ = 0.0f;
+    float centering_duration_s_ = 0.0f;
+    float centering_from_e_ = 0.0f;
+    float centering_delta_e_ = 0.0f;
+    void startCentering_();
+
     AnticoggingPhase anticogging_phase_ = AnticoggingPhase::SETTLE;
     AnticoggingFailReason last_anticogging_fail_reason_ = AnticoggingFailReason::NONE;
     float anticogging_settle_time_s_ = 0.0f;

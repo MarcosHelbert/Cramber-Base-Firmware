@@ -95,6 +95,7 @@ bool Axis::startHoming()
     homing_start_counts_ = encoder_.positionCounts();
     homing_settle_time_s_ = 0.0f;
     homing_electrical_angle_ = 0.0f;
+    centering_ = false;
 
     encoder_.setIdxSubscribe(true);
 
@@ -102,8 +103,29 @@ bool Axis::startHoming()
     return true;
 }
 
+void Axis::startCentering_()
+{
+    const float angle_rad = static_cast<float>(encoder_.positionCounts() - g_config.mechanical_offset) *
+                            (TWO_PI / static_cast<float>(g_config.encoder_cpr));
+    const float pole_pairs = static_cast<float>(g_config.motor_pole_pairs);
+
+    const float turns = std::round(angle_rad / TWO_PI);
+    const float shortest_rad = angle_rad - turns * TWO_PI;
+    encoder_.shiftTurns(-static_cast<int32_t>(turns));
+
+    constexpr float kPeakOmegaE = 8.0f * (TWO_PI / 2.0f);
+    constexpr float kMinDurationS = 0.3f;
+
+    centering_from_e_ = homing_electrical_angle_;
+    centering_delta_e_ = -shortest_rad * pole_pairs;
+    centering_duration_s_ = std::max(kMinDurationS, 1.5f * std::abs(centering_delta_e_) / kPeakOmegaE);
+    centering_time_s_ = 0.0f;
+    centering_ = true;
+}
+
 void Axis::stopHoming()
 {
+    centering_ = false;
     encoder_.setIdxSubscribe(false);
     motor_.disarm();
     iq_target_ = 0.0f;
@@ -323,10 +345,33 @@ void Axis::update(float dt)
         constexpr float kScanOmegaRadPerS = 4.0f * (TWO_PI / 2.0f);
         constexpr int32_t kDirectionDeadband = 8;
 
+        if (centering_)
+        {
+            centering_time_s_ += dt;
+            const float progress = smoothstepRamp_(centering_time_s_, centering_duration_s_);
+            homing_electrical_angle_ = centering_from_e_ + centering_delta_e_ * progress;
+            id_target_ = 0.0f;
+            iq_target_ = g_config.calibration_test_current;
+
+            constexpr float kHoldS = 0.2f;
+            if (centering_time_s_ >= centering_duration_s_ + kHoldS)
+            {
+                iq_target_ = 0.0f;
+                centering_ = false;
+                homing_done_ = true;
+            }
+            return;
+        }
+
         if (encoder_.isIndexed())
         {
-            iq_target_ = 0.0f;
             encoder_.setIdxSubscribe(false);
+            if (g_config.encoder_calibrated)
+            {
+                startCentering_();
+                return;
+            }
+            iq_target_ = 0.0f;
             homing_done_ = true;
             return;
         }

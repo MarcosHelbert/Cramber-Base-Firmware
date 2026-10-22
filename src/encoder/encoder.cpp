@@ -78,6 +78,16 @@ void Encoder::update()
         return;
     }
 
+    // ========= TURN SHIFT =========
+    if (pending_turns_ != 0)
+    {
+        const int32_t shift = pending_turns_ * static_cast<int32_t>(config_.encoder_cpr);
+        pending_turns_ = 0;
+        absolute_position_ += shift;
+        kalman_.reset(kalman_.state0() + static_cast<float>(shift) * two_pi_over_cpr_, kalman_.state1(),
+                      kalman_.state2());
+    }
+
     // ========= POSITION =========
     const uint32_t resolution = config_.encoder_cpr;
     const int32_t half_resolution = static_cast<int32_t>(resolution >> 1);
@@ -115,6 +125,7 @@ void Encoder::reset()
     last_count_ = 0;
     absolute_position_ = 0;
     indexed_ = false;
+    pending_turns_ = 0;
 
     kalman_.reset();
 }

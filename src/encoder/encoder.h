@@ -16,6 +16,8 @@ public:
     void update();
     void reset();
 
+    void shiftTurns(int32_t turns) { pending_turns_ = turns; }
+
     void setIdxSubscribe(bool enable);
     bool isIndexed() const { return indexed_; }
 
@@ -35,6 +37,7 @@ private:
     uint32_t last_count_ = 0;
     int32_t absolute_position_ = 0;
     bool indexed_ = false;
+    volatile int32_t pending_turns_ = 0;
 
     KalmanFilter3D kalman_;
 };
