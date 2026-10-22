@@ -32,7 +32,10 @@ enum ConfigCommand : uint8_t
     CMD_FACTORY_MODE = 0x09,
     CMD_GET_DEFAULT = 0x0A,
     CMD_TELEMETRY = 0x0B,
+    CMD_ENTER_BOOTLOADER = 0x0C,
 };
+
+constexpr uint16_t BOOTLOADER_CONFIRM = 0xB007;
 
 enum ConfigStatus : uint8_t
 {
@@ -282,6 +285,12 @@ private:
     uint8_t outbox_head_ = 0;
     uint8_t outbox_count_ = 0;
     void sendResponses_();
+
+    bool reset_pending_ = false;
+    bool reset_to_bootloader_ = false;
+    uint32_t reset_requested_ms_ = 0;
+    void requestReset_(bool to_bootloader);
+    void resetIfRequested_();
     bool encoder_calibration_pending_ = false;
     bool homing_pending_ = false;
     bool anticogging_calibration_pending_ = false;

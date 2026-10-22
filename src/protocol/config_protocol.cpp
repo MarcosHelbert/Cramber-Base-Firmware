@@ -5,6 +5,11 @@
 #include <tusb.h>
 
 #include <libopencm3/cm3/scb.h>
+#include <libopencm3/stm32/pwr.h>
+#include <libopencm3/stm32/rcc.h>
+#include <libopencm3/stm32/rtc.h>
+
+#include <boot_layout.h>
 #include <libopencm3/stm32/iwdg.h>
 
 #include <system/timer.h>
@@ -272,7 +277,18 @@ void ConfigProtocol::hidSet(uint8_t report_id, uint8_t const *buffer, uint16_t b
 
     case CMD_REBOOT:
         respond_(STATUS_OK, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
-        scb_reset_system();
+        requestReset_(false);
+        break;
+
+    case CMD_ENTER_BOOTLOADER:
+        if (cmd.param_id != BOOTLOADER_CONFIRM)
+        {
+            respond_(STATUS_ERR_INVALID_VALUE, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
+            break;
+        }
+        prepareFlashWrite_();
+        respond_(STATUS_OK, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
+        requestReset_(true);
         break;
 
     case CMD_CALIBRATE:
@@ -559,9 +575,33 @@ void ConfigProtocol::handleCalibrateAnticogging_(const ConfigCommandReport &cmd)
     respond_(STATUS_IN_PROGRESS, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
 }
 
+void ConfigProtocol::requestReset_(bool to_bootloader)
+{
+    reset_pending_ = true;
+    reset_to_bootloader_ = to_bootloader;
+    reset_requested_ms_ = millis();
+}
+
+void ConfigProtocol::resetIfRequested_()
+{
+    constexpr uint32_t kGraceMs = 20;
+    if (!reset_pending_ || outbox_count_ != 0 || millis() - reset_requested_ms_ < kGraceMs)
+        return;
+
+    motor_.disarm();
+    if (reset_to_bootloader_)
+    {
+        rcc_periph_clock_enable(RCC_PWR);
+        pwr_disable_backup_domain_write_protect();
+        RTC_BKPXR(0) = BOOT_REQUEST_MAGIC;
+    }
+    scb_reset_system();
+}
+
 void ConfigProtocol::poll()
 {
     sendResponses_();
+    resetIfRequested_();
 
     if (sound_pending_ && !startup_sound_.isPlaying())
     {
@@ -622,7 +662,7 @@ void ConfigProtocol::handleSave_(const ConfigCommandReport &cmd)
     config_store_.save();
 
     respond_(STATUS_OK, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
-    scb_reset_system();
+    requestReset_(false);
 }
 
 void ConfigProtocol::handleFactoryReset_(const ConfigCommandReport &cmd)
@@ -638,7 +678,7 @@ void ConfigProtocol::handleFactoryReset_(const ConfigCommandReport &cmd)
     user_prefs_.erase();
 
     respond_(STATUS_OK, cmd.command, cmd.param_id, VALUE_NONE, nullptr, cmd.sequence);
-    scb_reset_system();
+    requestReset_(false);
 }
 
 void ConfigProtocol::handleSet_(const ConfigCommandReport &cmd)

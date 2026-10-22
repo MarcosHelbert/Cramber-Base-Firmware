@@ -113,15 +113,24 @@ Wire the ST-Link to the board's SWD header:
 | SWCLK | SWCLK |
 | GND | GND |
 
-Power the board from its supply, then click **Upload**. The base restarts with the new firmware and shows up
-on the PC as a game controller.
+Power the board from its supply. The firmware has two parts: a small bootloader, flashed once, and the
+application, which can later be updated from Cramber Hub without a programmer.
+
+**First time on a board:** in the PlatformIO tasks, run **Custom → Upload with bootloader**. It flashes the
+bootloader, then the application.
+
+**Afterwards:** click **Upload** to flash only the application, or install a `firmware.bin` from Cramber Hub
+(Wheel Base → System → Update firmware). Calibration and settings are kept either way.
+
+The base restarts with the new firmware and shows up on the PC as a game controller.
 
 <details>
 <summary>Using the command line instead</summary>
 
 ```sh
-pio run -e genericSTM32F405RG_release             # build
-pio run -e genericSTM32F405RG_release -t upload   # build and flash
+pio run -e genericSTM32F405RG_release                              # build
+pio run -e genericSTM32F405RG_release -t upload_with_bootloader    # first time on a board
+pio run -e genericSTM32F405RG_release -t upload                    # application only
 ```
 
 </details>

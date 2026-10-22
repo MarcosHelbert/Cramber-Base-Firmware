@@ -1,3 +1,4 @@
+#include <libopencm3/cm3/scb.h>
 #include <libopencm3/stm32/iwdg.h>
 #include <libopencm3/stm32/timer.h>
 #include <libopencm3/stm32/rcc.h>
@@ -30,6 +31,8 @@
 #include <system/timer.h>
 
 #include <usb/usb.h>
+
+#include <boot_layout.h>
 
 ConfigStore config_store;
 UserPrefsStore user_prefs;
@@ -216,8 +219,13 @@ static void fault_task(void *arg)
     }
 }
 
+__attribute__((section(".app_header"), used)) static const AppHeader kAppHeader = {
+    APP_HEADER_MAGIC, 0, 0, kFirmwareVersion};
+
 int main()
 {
+    SCB_VTOR = APP_VECTOR_ADDR;
+
     rcc_clock_setup_pll(&rcc_hse_8mhz_3v3[RCC_CLOCK_3V3_168MHZ]);
 
     dwt_init();
