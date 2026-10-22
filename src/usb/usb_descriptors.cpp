@@ -107,13 +107,13 @@ uint8_t const desc_configuration[] = {
 #ifdef DEBUG
     TUD_HID_DESCRIPTOR(ITF_NUM_JOYSTICK, 0, HID_ITF_PROTOCOL_NONE,
                        sizeof(desc_hid_report_joystick), EPNUM_JOYSTICK,
-                       CFG_TUD_HID_EP_BUFSIZE, 8),
+                       CFG_TUD_HID_EP_BUFSIZE, 1),
     TUD_CDC_DESCRIPTOR(ITF_NUM_CDC_CTRL, 4, EPNUM_CDC_NOTIF, 8,
                        EPNUM_CDC_OUT, EPNUM_CDC_IN, 64),
 #else
     TUD_HID_DESCRIPTOR(ITF_NUM_JOYSTICK, 4, HID_ITF_PROTOCOL_NONE,
                        sizeof(desc_hid_report_joystick), EPNUM_JOYSTICK,
-                       CFG_TUD_HID_EP_BUFSIZE, 8),
+                       CFG_TUD_HID_EP_BUFSIZE, 1),
     TUD_HID_DESCRIPTOR(ITF_NUM_VENDOR, 5, HID_ITF_PROTOCOL_NONE,
                        sizeof(desc_hid_report_vendor), EPNUM_VENDOR,
                        CFG_TUD_HID_EP_BUFSIZE, 1),
