@@ -116,11 +116,15 @@ Wire the ST-Link to the board's SWD header:
 Power the board from its supply. The firmware has two parts: a small bootloader, flashed once, and the
 application, which can later be updated from Cramber Hub without a programmer.
 
-**First time on a board:** in the PlatformIO tasks, run **Custom → Upload with bootloader**. It flashes the
-bootloader, then the application.
+**First time on a board:** in the PlatformIO tasks, run **Custom → Upload full firmware**. It builds
+`cramber-dd-v<version>.bin`, with the bootloader and the application, and flashes it.
 
-**Afterwards:** click **Upload** to flash only the application, or install a `firmware.bin` from Cramber Hub
+**Afterwards:** click **Upload** to flash only the application, or install the firmware from Cramber Hub
 (Wheel Base → System → Update firmware). Calibration and settings are kept either way.
+
+**Custom → Build full firmware** only writes the file, to share or publish. The same
+`cramber-dd-v<version>.bin` works with any ST-Link tool (flash it at `0x08000000`) and with Cramber Hub, which
+takes only the application from it.
 
 The base restarts with the new firmware and shows up on the PC as a game controller.
 
@@ -129,7 +133,8 @@ The base restarts with the new firmware and shows up on the PC as a game control
 
 ```sh
 pio run -e genericSTM32F405RG_release                              # build
-pio run -e genericSTM32F405RG_release -t upload_with_bootloader    # first time on a board
+pio run -e genericSTM32F405RG_release -t upload_full_firmware      # first time on a board
+pio run -e genericSTM32F405RG_release -t build_full_firmware       # write cramber-dd-v<version>.bin
 pio run -e genericSTM32F405RG_release -t upload                    # application only
 ```
 
