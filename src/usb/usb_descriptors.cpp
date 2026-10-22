@@ -180,13 +180,6 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
         return ffb_manager.hidGet(report_id, buffer);
     }
 
-#ifndef DEBUG
-    if (itf == ITF_NUM_VENDOR)
-    {
-        return config_protocol.hidGet(report_id, buffer);
-    }
-#endif
-
     return 0;
 }
 

@@ -181,7 +181,8 @@ enum ConfigParamId : uint16_t
 //   byte 3:    value type (ConfigValueType)
 //   byte 4-7:  value (LE bit pattern of u32/i32/f32, or byte 4 only for bool)
 //   byte 8:    sequence number (echoed back)
-//   byte 9-15: reserved
+//   byte 9-10: client tag (u16 LE, echoed back)
+//   byte 11-15: reserved
 struct __attribute__((packed)) ConfigCommandReport
 {
     uint8_t command;
@@ -189,7 +190,8 @@ struct __attribute__((packed)) ConfigCommandReport
     uint8_t value_type;
     uint8_t value[4];
     uint8_t sequence;
-    uint8_t reserved[7];
+    uint16_t client_tag;
+    uint8_t reserved[5];
 };
 
 // Raw 16-byte IN report layout:
@@ -199,7 +201,8 @@ struct __attribute__((packed)) ConfigCommandReport
 //   byte 4:     value type
 //   byte 5-8:   value (response for GET, or progress/echo for SET/CALIBRATE)
 //   byte 9:     echoed sequence number
-//   byte 10-15: reserved
+//   byte 10-11: echoed client tag
+//   byte 12-15: reserved
 struct __attribute__((packed)) ConfigResponseReport
 {
     uint8_t status;
@@ -208,7 +211,8 @@ struct __attribute__((packed)) ConfigResponseReport
     uint8_t value_type;
     uint8_t value[4];
     uint8_t sequence;
-    uint8_t reserved[6];
+    uint16_t client_tag;
+    uint8_t reserved[4];
 };
 
 static_assert(sizeof(ConfigCommandReport) == CONFIG_REPORT_SIZE, "ConfigCommandReport must be 16 bytes");
@@ -223,7 +227,6 @@ public:
 
     void init();
     void hidSet(uint8_t report_id, uint8_t const *buffer, uint16_t bufsize);
-    uint16_t hidGet(uint8_t report_id, uint8_t *buffer);
 
     void poll();
 
@@ -270,7 +273,12 @@ private:
     UserDefaults user_defaults_{};
 
     ConfigCommandReport lastCommand_{};
-    ConfigResponseReport lastResponse_{};
+
+    static constexpr uint8_t kOutboxSize = 8;
+    ConfigResponseReport outbox_[kOutboxSize]{};
+    uint8_t outbox_head_ = 0;
+    uint8_t outbox_count_ = 0;
+    void sendResponses_();
     bool encoder_calibration_pending_ = false;
     bool homing_pending_ = false;
     bool anticogging_calibration_pending_ = false;

@@ -2,6 +2,8 @@
 
 #include <cstring>
 
+#include <tusb.h>
+
 #include <libopencm3/cm3/scb.h>
 #include <libopencm3/stm32/iwdg.h>
 
@@ -308,29 +310,42 @@ void ConfigProtocol::hidSet(uint8_t report_id, uint8_t const *buffer, uint16_t b
     }
 }
 
-uint16_t ConfigProtocol::hidGet(uint8_t report_id, uint8_t *buffer)
-{
-    if (report_id != CONFIG_REPORT_ID_RESPONSE)
-        return 0;
-
-    std::memcpy(buffer, &lastResponse_, sizeof(lastResponse_));
-    return sizeof(lastResponse_);
-}
-
 void ConfigProtocol::respond_(uint8_t status, uint8_t command, uint16_t param_id, uint8_t value_type, const uint8_t value[4], uint8_t sequence)
 {
-    lastResponse_.status = status;
-    lastResponse_.command = command;
-    lastResponse_.param_id = param_id;
-    lastResponse_.value_type = value_type;
+    if (outbox_count_ == kOutboxSize)
+    {
+        outbox_head_ = static_cast<uint8_t>((outbox_head_ + 1) % kOutboxSize);
+        outbox_count_--;
+    }
+    ConfigResponseReport &r = outbox_[(outbox_head_ + outbox_count_) % kOutboxSize];
+    outbox_count_++;
 
+    r = {};
+    r.status = status;
+    r.command = command;
+    r.param_id = param_id;
+    r.value_type = value_type;
     if (value)
-        std::memcpy(lastResponse_.value, value, sizeof(lastResponse_.value));
-    else
-        std::memset(lastResponse_.value, 0, sizeof(lastResponse_.value));
+        std::memcpy(r.value, value, sizeof(r.value));
+    r.sequence = sequence;
+    r.client_tag = lastCommand_.client_tag;
+}
 
-    lastResponse_.sequence = sequence;
-    std::memset(lastResponse_.reserved, 0, sizeof(lastResponse_.reserved));
+void ConfigProtocol::sendResponses_()
+{
+#ifdef DEBUG
+    outbox_count_ = 0;
+#else
+    constexpr uint8_t kVendorHidInstance = 1;
+    if (outbox_count_ == 0 || !tud_mounted() || !tud_hid_n_ready(kVendorHidInstance))
+        return;
+    if (tud_hid_n_report(kVendorHidInstance, CONFIG_REPORT_ID_RESPONSE, &outbox_[outbox_head_],
+                         sizeof(ConfigResponseReport)))
+    {
+        outbox_head_ = static_cast<uint8_t>((outbox_head_ + 1) % kOutboxSize);
+        outbox_count_--;
+    }
+#endif
 }
 
 void ConfigProtocol::handleGet_(const ConfigCommandReport &cmd)
@@ -543,6 +558,8 @@ void ConfigProtocol::handleCalibrateAnticogging_(const ConfigCommandReport &cmd)
 
 void ConfigProtocol::poll()
 {
+    sendResponses_();
+
     if (sound_pending_ && !startup_sound_.isPlaying())
     {
         motor_.disarm();
