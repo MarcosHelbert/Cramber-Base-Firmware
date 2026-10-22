@@ -13,7 +13,8 @@
 #include <persistence/user_prefs_store.h>
 #include <telemetry/telemetry.h>
 
-static constexpr uint32_t kFirmwareVersion = 1;
+static constexpr uint32_t kFirmwareVersion =
+    (FIRMWARE_VERSION_MAJOR << 16) | (FIRMWARE_VERSION_MINOR << 8) | FIRMWARE_VERSION_PATCH;
 
 #define CONFIG_REPORT_ID_COMMAND 21
 #define CONFIG_REPORT_ID_RESPONSE 23

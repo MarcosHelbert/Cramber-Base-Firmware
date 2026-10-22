@@ -2,7 +2,7 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["v*.*.*"]
 
 permissions:
   contents: write
@@ -27,11 +27,11 @@ jobs:
 
       - run: pip install platformio
 
-      - name: Check the tag against kFirmwareVersion
+      - name: Check the tag against the firmware version
         run: |
-          version=$(sed -n 's/.*kFirmwareVersion = \([0-9]\+\);.*/\1/p' src/protocol/config_protocol.h)
+          version=$(sed -n '/^\[firmware\]/,/^\[/s/^version *= *\([0-9.]*\).*/\1/p' platformio.ini)
           if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
-            echo "::error::Tag ${GITHUB_REF_NAME} doesn't match kFirmwareVersion = ${version} (expected v${version})"
+            echo "::error::Tag ${GITHUB_REF_NAME} doesn't match the firmware version ${version} (expected v${version})"
             exit 1
           fi
 

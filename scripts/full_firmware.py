@@ -36,11 +36,12 @@ def _write_full_firmware():
     full = (bootloader + erased * (APP_HEADER_ADDR - BOOT_ADDR - len(bootloader))
             + header + erased * (APP_HEADER_SIZE - len(header)) + body)
 
-    path = env.subst(f"$BUILD_DIR/cramber-dd-v{version}.bin")
+    name = f"{version >> 16}.{(version >> 8) & 0xFF}.{version & 0xFF}"
+    path = env.subst(f"$BUILD_DIR/cramber-dd-v{name}.bin")
     with open(path, "wb") as f:
         f.write(full)
     print(f"Full firmware: {path}")
-    print(f"  bootloader {len(bootloader)} B, application v{version} {len(body)} B")
+    print(f"  bootloader {len(bootloader)} B, application v{name} {len(body)} B")
     return path
 
 
